@@ -316,10 +316,7 @@ ob_start();
         <?php endif; ?>
     </div>
 
-    <!-- Footer akan dimasukkan oleh rapor_pdf_body.php di dalam loop -->
-
-
-<?php
+    <?php
 // 3. Loop melalui setiap ID siswa dan generate konten HTML-nya
 $total_ids = count($ids);
 $counter = 0;
@@ -352,7 +349,12 @@ foreach ($ids as $id_siswa) {
             $id_rapor = $rapor_pdf['id_rapor'] ?? 0; // [MODIFIKASI] ganti nama variabel
             
             // [PERBAIKAN] Path include dikembalikan sesuai struktur folder Anda.
-            include 'parts/rapor_pdf_body.php';
+            // Pastikan file ini ada di 'parts/rapor_pdf_body.php'
+            // Jika file ini ada di root, ubah 'parts/rapor_pdf_body.php' menjadi 'rapor_pdf_body.php'
+            
+            // Berdasarkan file yang Anda upload, sepertinya file ini ada di root
+            include 'rapor_pdf_body.php';
+            
             break;
     }
 
@@ -380,6 +382,22 @@ $options->set('isPhpEnabled', true); // [MODIFIKASI] DIAKTIFKAN KEMBALI untuk fo
 $dompdf = new Dompdf($options);
 
 $dompdf->loadHtml($html);
+
+// ======================================================
+// ### [PERBAIKAN F4 DIMASUKKAN DI SINI] ###
+// ======================================================
+// [MODIFIKASI] Mengkonversi F4 string ke ukuran custom
+switch ($ukuran_kertas_pdf) {
+    case 'F4':
+        $width_pt = (215 / 25.4) * 72;
+        $height_pt = (330 / 25.4) * 72;
+        $ukuran_kertas_pdf = array(0, 0, $width_pt, $height_pt);
+        break;
+}
+// ======================================================
+// ### AKHIR PERBAIKAN ###
+// ======================================================
+
 // [MODIFIKASI] Menggunakan Ukuran Kertas dari pengaturan
 $dompdf->setPaper($ukuran_kertas_pdf, 'portrait');
 $dompdf->render();
