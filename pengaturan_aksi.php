@@ -368,6 +368,7 @@ switch ($aksi) {
     // =======================================================
     // === AKSI BARU: MIGRASI DARI FILE BACKUP LAMA         ===
     // =======================================================
+    // LOGIKA YANG DIPERBARUI: (Restore -> Alter -> Update Data)
     case 'migrasi_via_file':
         global $koneksi;
         $errors = [];
@@ -384,26 +385,27 @@ switch ($aksi) {
         $file_path = $_FILES['sql_file_migrasi']['tmp_name'];
 
         try {
-            // 1. Nonaktifkan foreign key & ubah sementara kolom 'jenis_kelamin'
+            // 1. Nonaktifkan foreign key
             mysqli_query($koneksi, "SET foreign_key_checks = 0");
-            // **PERBAIKAN ERROR 'Data truncated'**
-            mysqli_query($koneksi, "ALTER TABLE `siswa` MODIFY `jenis_kelamin` VARCHAR(5) DEFAULT NULL");
             
+            // 2. HAPUS TOTAL (DROP) semua tabel yang ada di database BARU
+            // Ini mempersiapkan database untuk diisi dengan struktur LAMA
             $tables = [];
             $result = mysqli_query($koneksi, "SHOW TABLES");
             if (!$result) throw new Exception("Gagal mendapatkan daftar tabel: " . mysqli_error($koneksi));
+            
             while ($row = mysqli_fetch_row($result)) {
                 $tables[] = $row[0];
             }
             
-            // TRUNCATE (kosongkan) semua tabel. Ini tidak menghapus struktur baru.
             foreach ($tables as $table) {
-                if (!mysqli_query($koneksi, "TRUNCATE TABLE `{$table}`")) {
-                     $errors[] = "Gagal mengosongkan tabel `{$table}`: " . mysqli_error($koneksi);
+                if (!mysqli_query($koneksi, "DROP TABLE IF EXISTS `{$table}`")) {
+                   $errors[] = "Gagal menghapus tabel `{$table}`: " . mysqli_error($koneksi);
                 }
             }
 
-            // 2. Baca file SQL dan HANYA jalankan perintah INSERT
+            // 3. Baca file SQL lama dan jalankan SEMUA perintah (CREATE, INSERT, dll)
+            // Ini akan me-restore database ke struktur LAMA
             $query_buffer = '';
             $file_handle = fopen($file_path, 'r');
             if (!$file_handle) throw new Exception("Gagal membaca file SQL yang diunggah.");
@@ -411,45 +413,73 @@ switch ($aksi) {
             while (($line = fgets($file_handle)) !== false) {
                 $line_trimmed = trim($line);
                 
-                // Lewati baris kosong, komentar, DROP, atau CREATE
+                // Lewati baris kosong atau komentar
                 if (empty($line_trimmed) || substr($line_trimmed, 0, 2) == '--' || substr($line_trimmed, 0, 1) == '#') continue;
-                if (strtoupper(substr($line_trimmed, 0, 10)) == 'DROP TABLE') continue;
-                if (strtoupper(substr($line_trimmed, 0, 12)) == 'CREATE TABLE') continue;
 
                 $query_buffer .= $line;
 
                 // Jika ini adalah akhir dari perintah SQL (;)
                 if (substr($line_trimmed, -1, 1) == ';') {
-                    // Hanya jalankan jika ini adalah perintah INSERT
-                    if (strtoupper(substr(trim($query_buffer), 0, 11)) == 'INSERT INTO') {
-                        if (!mysqli_query($koneksi, $query_buffer)) {
-                            // Catat error tapi jangan hentikan proses
-                            $errors[] = "Gagal insert (data mungkin duplikat): " . substr(mysqli_error($koneksi), 0, 100);
-                        }
+                    if (!mysqli_query($koneksi, $query_buffer)) {
+                        // Catat error minor tapi lanjut (misal, index sudah ada, dll)
+                        $errors[] = "Query gagal (error minor): " . substr(mysqli_error($koneksi), 0, 100);
                     }
-                    $query_buffer = ''; // Kosongkan buffer
+                    $query_buffer = ''; 
                 }
             }
             fclose($file_handle);
             
-            // 3. Kembalikan struktur 'jenis_kelamin' dan bersihkan data
-            // Set data yang tidak valid ('') menjadi NULL
-            mysqli_query($koneksi, "UPDATE `siswa` SET `jenis_kelamin` = NULL WHERE `jenis_kelamin` NOT IN ('L', 'P')");
-            // Kembalikan ke ENUM
-            mysqli_query($koneksi, "ALTER TABLE `siswa` MODIFY `jenis_kelamin` ENUM('L','P') DEFAULT NULL");
+            // 4. JALANKAN MIGRASI STRUKTURAL (ALTER & CREATE)
+            // Ini adalah bagian PENTING untuk mengubah struktur LAMA -> BARU
+            // Berdasarkan file SQL Anda, DB baru memiliki kolom dan tabel kokurikuler tambahan.
 
-            // 4. Jalankan skrip migrasi untuk memperbaiki data (KKM, Mapel, dll)
+            // 4a. Tambahkan kolom 'id_koordinator' yang hilang ke 'kokurikuler_kegiatan'
+            $sql_alter1 = "ALTER TABLE `kokurikuler_kegiatan` 
+                           ADD COLUMN `id_koordinator` INT DEFAULT NULL AFTER `bentuk_kegiatan`,
+                           ADD KEY `fk_kegiatan_koordinator` (`id_koordinator`),
+                           ADD CONSTRAINT `fk_kegiatan_koordinator` FOREIGN KEY (`id_koordinator`) REFERENCES `guru` (`id_guru`) ON DELETE SET NULL ON UPDATE CASCADE";
+            if (!mysqli_query($koneksi, $sql_alter1)) {
+                $errors[] = "Gagal alter kokurikuler_kegiatan: " . mysqli_error($koneksi);
+            }
+
+            // 4b. Tambahkan tabel 'kokurikuler_mapel_terlibat' yang baru
+            $sql_create1 = "CREATE TABLE `kokurikuler_mapel_terlibat` (
+                              `id_kegiatan` int NOT NULL,
+                              `id_mapel` int NOT NULL,
+                              PRIMARY KEY (`id_kegiatan`,`id_mapel`),
+                              KEY `fk_mapel_mapel` (`id_mapel`),
+                              CONSTRAINT `fk_mapel_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE,
+                              CONSTRAINT `fk_mapel_mapel` FOREIGN KEY (`id_mapel`) REFERENCES `mata_pelajaran` (`id_mapel`) ON DELETE CASCADE ON UPDATE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
+            if (!mysqli_query($koneksi, $sql_create1)) {
+                $errors[] = "Gagal create kokurikuler_mapel_terlibat: " . mysqli_error($koneksi);
+            }
+
+            // 4c. Tambahkan tabel 'kokurikuler_tim_penilai' yang baru
+            $sql_create2 = "CREATE TABLE `kokurikuler_tim_penilai` (
+                              `id_kegiatan` int NOT NULL,
+                              `id_guru` int NOT NULL,
+                              PRIMARY KEY (`id_kegiatan`,`id_guru`),
+                              KEY `fk_tim_guru` (`id_guru`),
+                              CONSTRAINT `fk_tim_guru` FOREIGN KEY (`id_guru`) REFERENCES `guru` (`id_guru`) ON DELETE CASCADE ON UPDATE CASCADE,
+                              CONSTRAINT `fk_tim_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
+            if (!mysqli_query($koneksi, $sql_create2)) {
+                $errors[] = "Gagal create kokurikuler_tim_penilai: " . mysqli_error($koneksi);
+            }
+
+            // 5. Jalankan skrip migrasi DATA untuk memperbaiki data (KKM, Mapel, dll)
             jalankan_skrip_migrasi($koneksi, $errors);
 
-            // 5. Aktifkan kembali foreign key
+            // 6. Aktifkan kembali foreign key
             mysqli_query($koneksi, "SET foreign_key_checks = 1");
 
-            // 6. Beri laporan
+            // 7. Beri laporan
             if (empty($errors)) {
                 $_SESSION['pesan'] = set_json_pesan('success', 'Migrasi Berhasil!', 'Data lama Anda telah berhasil diimpor dan diperbarui ke struktur baru.');
             } else {
-                 // Jika ada error, kita tetap beri pesan sukses karena migrasi data adalah yg utama
-                 $_SESSION['pesan'] = set_json_pesan('success', 'Migrasi Selesai!', 'Data lama Anda telah berhasil diimpor dan diperbarui.');
+                 $error_string = implode('; ', array_slice($errors, 0, 3)); // Ambil 3 error pertama
+                 $_SESSION['pesan'] = set_json_pesan('warning', 'Migrasi Selesai (dengan error)', 'Data diimpor, tapi terjadi beberapa error: ' . $error_string . '...');
             }
 
         } catch (Exception $e) {
@@ -468,4 +498,4 @@ switch ($aksi) {
         exit();
         break;
 }
-?> 
+?>
