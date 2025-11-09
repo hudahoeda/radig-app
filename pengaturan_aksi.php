@@ -299,6 +299,10 @@ switch ($aksi) {
             set_time_limit(0); // Mencegah timeout
             mysqli_query($koneksi, "SET foreign_key_checks = 0");
 
+            // *** TAMBAHAN BARU: Matikan strict mode untuk impor ***
+            // Ini akan mentolerir data 'jenis_kelamin' yang tidak valid (spt string kosong '')
+            mysqli_query($koneksi, "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
+
             $tables = [];
             $result = mysqli_query($koneksi, "SHOW TABLES");
             if (!$result) { throw new Exception("Gagal mendapatkan daftar tabel: " . mysqli_error($koneksi)); }
@@ -369,6 +373,8 @@ switch ($aksi) {
     // === AKSI BARU: MIGRASI DARI FILE BACKUP LAMA         ===
     // =======================================================
     // LOGIKA YANG DIPERBARUI: (Restore -> Alter -> Update Data)
+    // + PENANGANAN ERROR "DATA TRUNCATED"
+    // + PENANGANAN ERROR "DUPLICATE COLUMN" (SUPER FINAL)
     case 'migrasi_via_file':
         global $koneksi;
         $errors = [];
@@ -388,8 +394,10 @@ switch ($aksi) {
             // 1. Nonaktifkan foreign key
             mysqli_query($koneksi, "SET foreign_key_checks = 0");
             
+            // Matikan strict mode HANYA untuk sesi impor ini.
+            mysqli_query($koneksi, "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
+            
             // 2. HAPUS TOTAL (DROP) semua tabel yang ada di database BARU
-            // Ini mempersiapkan database untuk diisi dengan struktur LAMA
             $tables = [];
             $result = mysqli_query($koneksi, "SHOW TABLES");
             if (!$result) throw new Exception("Gagal mendapatkan daftar tabel: " . mysqli_error($koneksi));
@@ -405,7 +413,8 @@ switch ($aksi) {
             }
 
             // 3. Baca file SQL lama dan jalankan SEMUA perintah (CREATE, INSERT, dll)
-            // Ini akan me-restore database ke struktur LAMA
+            // Ini akan me-restore database ke struktur LAMA (jika file lama diupload)
+            // ATAU ke struktur BARU (jika file baru yang salah diupload)
             $query_buffer = '';
             $file_handle = fopen($file_path, 'r');
             if (!$file_handle) throw new Exception("Gagal membaca file SQL yang diunggah.");
@@ -413,15 +422,12 @@ switch ($aksi) {
             while (($line = fgets($file_handle)) !== false) {
                 $line_trimmed = trim($line);
                 
-                // Lewati baris kosong atau komentar
                 if (empty($line_trimmed) || substr($line_trimmed, 0, 2) == '--' || substr($line_trimmed, 0, 1) == '#') continue;
 
                 $query_buffer .= $line;
 
-                // Jika ini adalah akhir dari perintah SQL (;)
                 if (substr($line_trimmed, -1, 1) == ';') {
                     if (!mysqli_query($koneksi, $query_buffer)) {
-                        // Catat error minor tapi lanjut (misal, index sudah ada, dll)
                         $errors[] = "Query gagal (error minor): " . substr(mysqli_error($koneksi), 0, 100);
                     }
                     $query_buffer = ''; 
@@ -430,20 +436,27 @@ switch ($aksi) {
             fclose($file_handle);
             
             // 4. JALANKAN MIGRASI STRUKTURAL (ALTER & CREATE)
-            // Ini adalah bagian PENTING untuk mengubah struktur LAMA -> BARU
-            // Berdasarkan file SQL Anda, DB baru memiliki kolom dan tabel kokurikuler tambahan.
+            // Mengubah struktur LAMA -> BARU, dan TAHAN JIKA STRUKTUR BARU SUDAH ADA
 
-            // 4a. Tambahkan kolom 'id_koordinator' yang hilang ke 'kokurikuler_kegiatan'
-            $sql_alter1 = "ALTER TABLE `kokurikuler_kegiatan` 
-                           ADD COLUMN `id_koordinator` INT DEFAULT NULL AFTER `bentuk_kegiatan`,
-                           ADD KEY `fk_kegiatan_koordinator` (`id_koordinator`),
-                           ADD CONSTRAINT `fk_kegiatan_koordinator` FOREIGN KEY (`id_koordinator`) REFERENCES `guru` (`id_guru`) ON DELETE SET NULL ON UPDATE CASCADE";
-            if (!mysqli_query($koneksi, $sql_alter1)) {
-                $errors[] = "Gagal alter kokurikuler_kegiatan: " . mysqli_error($koneksi);
+            // 4a. Tambahkan kolom 'id_koordinator' JIKA BELUM ADA
+            $cek_kolom_sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kokurikuler_kegiatan' AND COLUMN_NAME = 'id_koordinator'";
+            $hasil_cek = mysqli_query($koneksi, $cek_kolom_sql);
+
+            if ($hasil_cek && mysqli_num_rows($hasil_cek) == 0) {
+                // Kolom BELUM ADA (ini alur yg benar, user upload file LAMA), maka kita tambahkan
+                $sql_alter1 = "ALTER TABLE `kokurikuler_kegiatan`
+                               ADD COLUMN `id_koordinator` INT DEFAULT NULL AFTER `bentuk_kegiatan`,
+                               ADD KEY `fk_kegiatan_koordinator` (`id_koordinator`),
+                               ADD CONSTRAINT `fk_kegiatan_koordinator` FOREIGN KEY (`id_koordinator`) REFERENCES `guru` (`id_guru`) ON DELETE SET NULL ON UPDATE CASCADE";
+                if (!mysqli_query($koneksi, $sql_alter1)) {
+                    $errors[] = "Gagal alter kokurikuler_kegiatan: " . mysqli_error($koneksi);
+                }
             }
+            // Jika $hasil_cek > 0, berarti kolom sudah ada (user salah upload file BARU), jadi kita lewati.
 
-            // 4b. Tambahkan tabel 'kokurikuler_mapel_terlibat' yang baru
-            $sql_create1 = "CREATE TABLE `kokurikuler_mapel_terlibat` (
+            // 4b. Tambahkan tabel 'kokurikuler_mapel_terlibat' JIKA BELUM ADA
+            // Menggunakan CREATE TABLE IF NOT EXISTS agar aman
+            $sql_create1 = "CREATE TABLE IF NOT EXISTS `kokurikuler_mapel_terlibat` (
                               `id_kegiatan` int NOT NULL,
                               `id_mapel` int NOT NULL,
                               PRIMARY KEY (`id_kegiatan`,`id_mapel`),
@@ -455,8 +468,9 @@ switch ($aksi) {
                 $errors[] = "Gagal create kokurikuler_mapel_terlibat: " . mysqli_error($koneksi);
             }
 
-            // 4c. Tambahkan tabel 'kokurikuler_tim_penilai' yang baru
-            $sql_create2 = "CREATE TABLE `kokurikuler_tim_penilai` (
+            // 4c. Tambahkan tabel 'kokurikuler_tim_penilai' JIKA BELUM ADA
+            // Menggunakan CREATE TABLE IF NOT EXISTS agar aman
+            $sql_create2 = "CREATE TABLE IF NOT EXISTS `kokurikuler_tim_penilai` (
                               `id_kegiatan` int NOT NULL,
                               `id_guru` int NOT NULL,
                               PRIMARY KEY (`id_kegiatan`,`id_guru`),
@@ -468,13 +482,18 @@ switch ($aksi) {
                 $errors[] = "Gagal create kokurikuler_tim_penilai: " . mysqli_error($koneksi);
             }
 
-            // 5. Jalankan skrip migrasi DATA untuk memperbaiki data (KKM, Mapel, dll)
+            // 5. JALANKAN MIGRASI DATA
+            // Menjalankan skrip perbaikan data (KKM, Mapel, dll)
             jalankan_skrip_migrasi($koneksi, $errors);
 
-            // 6. Aktifkan kembali foreign key
+            // 6. Pembersihan Data (Tambahan)
+            // Memastikan data jenis_kelamin yang '' (string kosong) menjadi NULL
+            mysqli_query($koneksi, "UPDATE `siswa` SET `jenis_kelamin` = NULL WHERE `jenis_kelamin` = ''");
+
+            // 7. Aktifkan kembali foreign key
             mysqli_query($koneksi, "SET foreign_key_checks = 1");
 
-            // 7. Beri laporan
+            // 8. Beri laporan
             if (empty($errors)) {
                 $_SESSION['pesan'] = set_json_pesan('success', 'Migrasi Berhasil!', 'Data lama Anda telah berhasil diimpor dan diperbarui ke struktur baru.');
             } else {
