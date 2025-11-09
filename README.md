@@ -31,7 +31,7 @@ Untuk menjalankan aplikasi THE RADIG V2.0.1, pastikan perangkat Anda memenuhi pe
 ## 🚀 Instalasi dan Penggunaan
 
 ### 1. Unduh Aplikasi
-* Kunjungi laman resmi unduhan: [https://bigsmpkabmalang.com/unduhrapor/](https://bigsmpkabmalang.com/unduhrapor/) (atau sumber resmi yang disediakan).
+* Kunjungi laman resmi unduhan: [https://bigsmpkabmalang.com/unduhrapor/](https://bigsmpkabmalang.com/unduhrapor/) 
 * Unduh file instalasi terbaru (*installer*).
 
 ### 2. Instalasi
@@ -67,7 +67,7 @@ Aplikasi THE RADIG V2.0.1 didistribusikan sebagai **Perangkat Lunak Gratis** (*F
 ---
 
 **Pengembang:**
-* (Nama/Institusi Pengembang - jika ada di *landing page*)
+* Angga Agus Kariyawan
 
 **Versi Aplikasi:**
 * V2.0.1
