@@ -4,6 +4,7 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 session_start();
 include 'koneksi.php'; // Memastikan koneksi database disertakan
+include 'utils/tanggal.php';
 
 // Memanggil autoloader Dompdf
 require_once 'libs/autoload.php'; // Pastikan path ini benar
@@ -32,8 +33,8 @@ $semester_aktif = $pengaturan_pdf['semester_aktif'] ?? 1;
 $semester_text = ($semester_aktif == 1) ? '1 (Ganjil)' : '2 (Genap)';
 
 // [MODIFIKASI] Menggunakan tanggal PTS dari pengaturan
-$tanggal_rapor_pts_db = $pengaturan_pdf['tanggal_rapor_pts'] ?? date("Y-m-d");
-$tanggal_rapor_pts = date("d F Y", strtotime($tanggal_rapor_pts_db));
+$tanggal_rapor_pts_db = $pengaturan_pdf['tanggal_rapor_pts'] ?? date_id("Y-m-d");
+$tanggal_rapor_pts = date_id("d F Y", strtotime($tanggal_rapor_pts_db));
 
 // [MODIFIKASI] Mengambil Ukuran Kertas dan Skema Warna
 $ukuran_kertas_pdf = $pengaturan_pdf['rapor_ukuran_kertas'] ?? 'A4'; // Default A4
@@ -232,7 +233,7 @@ ob_start(); // Mulai output buffering
     <title>Rapor PTS <?php echo htmlspecialchars($siswa['nama_lengkap']); ?></title>
     <style>
         @page {
-            margin: 110px 30px 40px 30px;
+            margin: 140px 30px 40px 30px;
             /* top, right, bottom, left */
         }
 
@@ -244,11 +245,10 @@ ob_start(); // Mulai output buffering
 
         header {
             position: fixed;
-            top: -100px;
+            top: -130px;
             /* Sesuaikan dengan margin atas */
             left: 0px;
             right: 0px;
-            height: 90px;
         }
 
         .pagenum:before {
@@ -300,7 +300,6 @@ ob_start(); // Mulai output buffering
             text-align: center;
             font-size: 14pt;
             font-weight: bold;
-            margin-top: 25px;
             /* [PERBAIKAN] Digeser ke bawah (dari 15px) */
             margin-bottom: 15px;
             color: #000;
