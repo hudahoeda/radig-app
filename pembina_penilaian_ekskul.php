@@ -16,11 +16,11 @@ $id_tahun_ajaran = mysqli_fetch_assoc($q_ta)['id_tahun_ajaran'];
 $q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
 $semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'];
 
-// Ambil daftar ekskul yang dibina oleh guru ini ke dalam array
+// Ambil daftar ekskul
 $q_ekskul_list = mysqli_query($koneksi, "SELECT id_ekskul, nama_ekskul FROM ekstrakurikuler WHERE id_pembina = $id_pembina AND id_tahun_ajaran = $id_tahun_ajaran");
 $daftar_ekskul = mysqli_fetch_all($q_ekskul_list, MYSQLI_ASSOC);
 
-// Tentukan ekskul yang akan ditampilkan
+// Tentukan ekskul terpilih
 $id_ekskul_terpilih = $_GET['ekskul_id'] ?? null;
 $ekskul_terpilih_data = null;
 
@@ -38,66 +38,16 @@ if (!empty($daftar_ekskul)) {
 ?>
 
 <style>
-    .page-header {
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        padding: 2.5rem 2rem;
-        border-radius: 0.75rem;
-        color: white;
-    }
+    .page-header { background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2.5rem 2rem; border-radius: 0.75rem; color: white; }
     .page-header h1 { font-weight: 700; }
-
-    .objective-header {
-        min-width: 200px;
-        max-width: 250px;
-        white-space: normal;
-        vertical-align: middle !important;
-    }
-
-    .table-assessment .sticky-col {
-        position: -webkit-sticky;
-        position: sticky;
-        left: 0;
-        z-index: 2;
-        background-color: #fff;
-        min-width: 200px;
-    }
-    .table-assessment thead {
-        position: -webkit-sticky;
-        position: sticky;
-        top: 0;
-        z-index: 3;
-    }
-
-    .value-buttons {
-        display: flex;
-        justify-content: center;
-        gap: 5px;
-    }
-    .value-buttons .btn-nilai {
-        border-radius: 50%;
-        width: 38px;
-        height: 38px;
-        font-weight: 700;
-        border: 2px solid transparent;
-        transition: all 0.2s ease;
-        padding: 0;
-        line-height: 34px;
-    }
-    .value-buttons .btn-nilai:hover {
-        transform: scale(1.1);
-    }
-    .value-buttons .btn-nilai.active {
-        box-shadow: 0 0 0 3px var(--primary-color);
-        border-color: white;
-    }
-    
-    /* Style untuk header grup kelas */
-    .class-group-header {
-        background-color: #f2f2f2 !important; /* Warna latar belakang abu-abu muda */
-        color: var(--primary-color); /* Warna teks utama */
-        font-weight: bold;
-        padding: 0.8rem 1rem;
-    }
+    .objective-header { min-width: 200px; max-width: 250px; white-space: normal; vertical-align: middle !important; }
+    .table-assessment .sticky-col { position: sticky; left: 0; z-index: 2; background-color: #fff; min-width: 200px; }
+    .table-assessment thead { position: sticky; top: 0; z-index: 3; }
+    .value-buttons { display: flex; justify-content: center; gap: 5px; }
+    .value-buttons .btn-nilai { border-radius: 50%; width: 38px; height: 38px; font-weight: 700; border: 2px solid transparent; transition: all 0.2s ease; padding: 0; line-height: 34px; }
+    .value-buttons .btn-nilai:hover { transform: scale(1.1); }
+    .value-buttons .btn-nilai.active { box-shadow: 0 0 0 3px var(--primary-color); border-color: white; }
+    .class-group-header { background-color: #f2f2f2 !important; color: var(--primary-color); font-weight: bold; padding: 0.8rem 1rem; }
 </style>
 
 <div class="container-fluid">
@@ -106,19 +56,14 @@ if (!empty($daftar_ekskul)) {
             <div>
                 <h1 class="display-6 mb-1">Penilaian Ekstrakurikuler</h1>
                 <?php if ($ekskul_terpilih_data): ?>
-                    <p class="fs-5 text-muted mb-0">
-                        <i class="bi bi-award-fill me-2"></i>
-                        <?php echo htmlspecialchars($ekskul_terpilih_data['nama_ekskul']); ?>
-                    </p>
+                    <p class="fs-5 text-muted mb-0"><i class="bi bi-award-fill me-2"></i><?php echo htmlspecialchars($ekskul_terpilih_data['nama_ekskul']); ?></p>
                 <?php endif; ?>
             </div>
             <?php if (count($daftar_ekskul) > 1) : ?>
             <ul class="nav nav-pills nav-fill mt-3 mt-sm-0">
                 <?php foreach ($daftar_ekskul as $ekskul) : ?>
                     <li class="nav-item">
-                        <a class="nav-link <?php echo ($ekskul['id_ekskul'] == $id_ekskul_terpilih) ? 'active' : 'bg-white text-dark'; ?>" href="?ekskul_id=<?php echo $ekskul['id_ekskul']; ?>">
-                            <?php echo htmlspecialchars($ekskul['nama_ekskul']); ?>
-                        </a>
+                        <a class="nav-link <?php echo ($ekskul['id_ekskul'] == $id_ekskul_terpilih) ? 'active' : 'bg-white text-dark'; ?>" href="?ekskul_id=<?php echo $ekskul['id_ekskul']; ?>"><?php echo htmlspecialchars($ekskul['nama_ekskul']); ?></a>
                     </li>
                 <?php endforeach; ?>
             </ul>
@@ -127,57 +72,66 @@ if (!empty($daftar_ekskul)) {
     </div>
 
     <?php if ($id_ekskul_terpilih):
+        // Data Tujuan
         $q_tujuan = mysqli_query($koneksi, "SELECT id_tujuan_ekskul, deskripsi_tujuan FROM ekskul_tujuan WHERE id_ekskul = $id_ekskul_terpilih AND semester = $semester_aktif ORDER BY id_tujuan_ekskul");
         $daftar_tujuan = mysqli_fetch_all($q_tujuan, MYSQLI_ASSOC);
 
-        // --- PERUBAHAN 1: Modifikasi Kueri Peserta ---
-        // Menambahkan JOIN ke tabel 'kelas' untuk mendapatkan 'nama_kelas'
-        // dan mengurutkan berdasarkan 'nama_kelas' terlebih dahulu.
-        $q_peserta = mysqli_query($koneksi, "
-            SELECT p.id_peserta_ekskul, s.nama_lengkap, k.nama_kelas 
-            FROM ekskul_peserta p 
-            JOIN siswa s ON p.id_siswa = s.id_siswa 
-            JOIN kelas k ON s.id_kelas = k.id_kelas
-            WHERE p.id_ekskul = $id_ekskul_terpilih 
-            ORDER BY k.nama_kelas ASC, s.nama_lengkap ASC
-        ");
-
-        // --- PERUBAHAN 2: Proses Data Peserta ke dalam Array Terkelompok ---
+        // Data Peserta (Group by Kelas)
+        $q_peserta = mysqli_query($koneksi, "SELECT p.id_peserta_ekskul, s.nama_lengkap, k.nama_kelas FROM ekskul_peserta p JOIN siswa s ON p.id_siswa = s.id_siswa JOIN kelas k ON s.id_kelas = k.id_kelas WHERE p.id_ekskul = $id_ekskul_terpilih ORDER BY k.nama_kelas ASC, s.nama_lengkap ASC");
         $peserta_per_kelas = [];
-        if(mysqli_num_rows($q_peserta) > 0) {
-            while($peserta = mysqli_fetch_assoc($q_peserta)) {
-                $peserta_per_kelas[$peserta['nama_kelas']][] = $peserta;
-            }
+        while($peserta = mysqli_fetch_assoc($q_peserta)) {
+            $peserta_per_kelas[$peserta['nama_kelas']][] = $peserta;
         }
         
+        // Data Nilai & Kehadiran yang sudah ada
         $data_penilaian = [];
-        $q_nilai_ada = mysqli_query($koneksi, "SELECT id_peserta_ekskul, id_tujuan_ekskul, nilai FROM ekskul_penilaian WHERE id_peserta_ekskul IN (SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_ekskul = $id_ekskul_terpilih)");
-        while($n = mysqli_fetch_assoc($q_nilai_ada)) {
-            $data_penilaian[$n['id_peserta_ekskul']][$n['id_tujuan_ekskul']] = $n['nilai'];
-        }
+        $q_nilai = mysqli_query($koneksi, "SELECT id_peserta_ekskul, id_tujuan_ekskul, nilai FROM ekskul_penilaian WHERE id_peserta_ekskul IN (SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_ekskul = $id_ekskul_terpilih)");
+        while($n = mysqli_fetch_assoc($q_nilai)) $data_penilaian[$n['id_peserta_ekskul']][$n['id_tujuan_ekskul']] = $n['nilai'];
+
         $data_kehadiran = [];
-        $q_hadir_ada = mysqli_query($koneksi, "SELECT id_peserta_ekskul, jumlah_hadir, total_pertemuan FROM ekskul_kehadiran WHERE semester = $semester_aktif AND id_peserta_ekskul IN (SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_ekskul = $id_ekskul_terpilih)");
         $total_pertemuan_umum = 0;
-        while($h = mysqli_fetch_assoc($q_hadir_ada)) {
+        $q_hadir = mysqli_query($koneksi, "SELECT id_peserta_ekskul, jumlah_hadir, total_pertemuan FROM ekskul_kehadiran WHERE semester = $semester_aktif AND id_peserta_ekskul IN (SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_ekskul = $id_ekskul_terpilih)");
+        while($h = mysqli_fetch_assoc($q_hadir)) {
             $data_kehadiran[$h['id_peserta_ekskul']] = $h['jumlah_hadir'];
             if ($h['total_pertemuan'] > 0) $total_pertemuan_umum = $h['total_pertemuan'];
         }
     ?>
+    
+    <!-- Tombol Import/Export -->
+    <div class="card mb-3 shadow-sm border-0 bg-light">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 text-primary"><i class="bi bi-lightning-charge-fill me-2"></i>Aksi Cepat</h5>
+                <small class="text-muted">Gunakan Excel (.xlsx) untuk import data massal.</small>
+            </div>
+            <div class="d-flex gap-2">
+                <!-- MODIFIKASI: Link Download mengarah ke template Excel -->
+                <a href="pembina_penilaian_aksi.php?aksi=download_template_excel&id_ekskul=<?php echo $id_ekskul_terpilih; ?>&semester=<?php echo $semester_aktif; ?>" class="btn btn-outline-success">
+                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>Download Template (Excel)
+                </a>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImport">
+                    <i class="bi bi-upload me-2"></i>Import Nilai (Excel)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Form Input Manual -->
     <form action="pembina_penilaian_aksi.php?aksi=simpan_penilaian" method="POST">
         <input type="hidden" name="id_ekskul" value="<?php echo $id_ekskul_terpilih; ?>">
         <input type="hidden" name="semester" value="<?php echo $semester_aktif; ?>">
         
         <?php if (empty($daftar_tujuan)): ?>
-            <div class="alert alert-danger text-center"><strong>Tujuan Pembelajaran Kosong!</strong><br>Silakan buat terlebih dahulu di menu 'Kelola Tujuan Ekskul' untuk semester ini.</div>
+            <div class="alert alert-danger text-center"><strong>Tujuan Pembelajaran Kosong!</strong><br>Silakan buat terlebih dahulu di menu 'Kelola Tujuan Ekskul'.</div>
         <?php elseif (empty($peserta_per_kelas)): ?>
-             <div class="alert alert-warning text-center"><strong>Peserta Kosong!</strong><br>Belum ada siswa yang didaftarkan pada ekstrakurikuler ini oleh wali kelas.</div>
+             <div class="alert alert-warning text-center"><strong>Peserta Kosong!</strong><br>Belum ada siswa yang didaftarkan.</div>
         <?php else: ?>
         <div class="card shadow-sm">
             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                 <h5 class="mb-0"><i class="bi bi-pencil-square me-2"></i>Input Nilai Semester <?php echo $semester_aktif; ?></h5>
+                 <h5 class="mb-0"><i class="bi bi-pencil-square me-2"></i>Input Manual</h5>
                  <div class="input-group" style="width: 300px;">
-                     <span class="input-group-text fw-bold"><i class="bi bi-calendar-check me-2"></i>Total Pertemuan</span>
-                     <input type="number" name="total_pertemuan_umum" class="form-control" value="<?php echo $total_pertemuan_umum; ?>" placeholder="cth: 16" required>
+                     <span class="input-group-text fw-bold">Total Pertemuan</span>
+                     <input type="number" name="total_pertemuan_umum" class="form-control" value="<?php echo $total_pertemuan_umum; ?>" placeholder="cth: 16">
                  </div>
             </div>
             <div class="card-body p-0">
@@ -188,9 +142,7 @@ if (!empty($daftar_ekskul)) {
                                 <th class="sticky-col">Nama Siswa</th>
                                 <th class="text-center">Kehadiran</th>
                                 <?php foreach ($daftar_tujuan as $tujuan): ?>
-                                <th class="objective-header">
-                                    <?php echo htmlspecialchars($tujuan['deskripsi_tujuan']); ?>
-                                </th>
+                                <th class="objective-header"><?php echo htmlspecialchars($tujuan['deskripsi_tujuan']); ?></th>
                                 <?php endforeach; ?>
                             </tr>
                         </thead>
@@ -201,13 +153,9 @@ if (!empty($daftar_ekskul)) {
                                         <i class="bi bi-person-workspace me-2"></i> Kelas: <?php echo htmlspecialchars($nama_kelas); ?>
                                     </td>
                                 </tr>
-                                <?php foreach($daftar_peserta as $peserta): 
-                                    $id_peserta = $peserta['id_peserta_ekskul'];
-                                ?>
+                                <?php foreach($daftar_peserta as $peserta): $id_peserta = $peserta['id_peserta_ekskul']; ?>
                                 <tr>
-                                    <td class="sticky-col align-middle">
-                                        <strong><?php echo htmlspecialchars($peserta['nama_lengkap']); ?></strong>
-                                    </td>
+                                    <td class="sticky-col align-middle"><strong><?php echo htmlspecialchars($peserta['nama_lengkap']); ?></strong></td>
                                     <td class="align-middle" style="min-width: 120px;">
                                         <input type="number" name="kehadiran[<?php echo $id_peserta; ?>]" class="form-control form-control-sm" value="<?php echo $data_kehadiran[$id_peserta] ?? ''; ?>" placeholder="Hadir">
                                     </td>
@@ -234,7 +182,7 @@ if (!empty($daftar_ekskul)) {
             </div>
         </div>
         <div class="mt-4 d-flex justify-content-end">
-             <button type="submit" name="simpan_nilai" class="btn btn-success btn-lg"><i class="bi bi-check-circle-fill me-2"></i> Simpan Semua Perubahan</button>
+             <button type="submit" name="simpan_nilai" class="btn btn-success btn-lg"><i class="bi bi-check-circle-fill me-2"></i> Simpan (Manual)</button>
         </div>
     </form>
     <?php endif; ?>
@@ -249,9 +197,46 @@ if (!empty($daftar_ekskul)) {
     <?php endif; ?>
 </div>
 
+<!-- Modal Import Excel -->
+<div class="modal fade" id="modalImport" tabindex="-1">
+    <div class="modal-dialog">
+        <!-- MODIFIKASI: Aksi mengarah ke import_nilai_excel -->
+        <form action="pembina_penilaian_aksi.php?aksi=import_nilai_excel" method="POST" enctype="multipart/form-data">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Import Nilai Ekskul</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="id_ekskul" value="<?php echo $id_ekskul_terpilih; ?>">
+                    <input type="hidden" name="semester" value="<?php echo $semester_aktif; ?>">
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">1. Atur Total Pertemuan (Wajib)</label>
+                        <input type="number" name="total_pertemuan_import" class="form-control" placeholder="Contoh: 16" required value="<?php echo $total_pertemuan_umum; ?>">
+                        <div class="form-text">Nilai ini akan diterapkan ke semua siswa yang diimport.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">2. Upload File Template Excel</label>
+                        <!-- Accept .xlsx -->
+                        <input type="file" name="file_nilai" class="form-control" accept=".xlsx" required>
+                        <div class="form-text text-danger">* Gunakan file Excel yang di-download dari tombol "Download Template".</div>
+                        <div class="form-text">Tips: Anda bisa mengisi nilai dengan "SB", "B", "C", atau "K" di Excel.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success">Upload & Proses</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
-// ... (Kode JavaScript tidak perlu diubah) ...
 document.addEventListener('DOMContentLoaded', function() {
+    // Logic tombol nilai Manual (SB, B, C, K)
     const valueButtonGroups = document.querySelectorAll('.value-buttons');
     valueButtonGroups.forEach(group => {
         group.addEventListener('click', function(e) {
@@ -273,7 +258,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <?php
-// ... (Kode notifikasi Swal tidak perlu diubah) ...
 if (isset($_SESSION['pesan'])) {
     echo "<script>Swal.fire('Berhasil!', '" . addslashes($_SESSION['pesan']) . "', 'success');</script>";
     unset($_SESSION['pesan']);
