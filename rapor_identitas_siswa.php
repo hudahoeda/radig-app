@@ -92,11 +92,20 @@ ob_start();
                 <td class="separator">:</td>
                 <td><?php echo htmlspecialchars($siswa['nis']) . ' / ' . htmlspecialchars($siswa['nisn']); ?></td>
             </tr>
+            <?php
+            $tanggal_lahir = '-';
+            if (!empty($siswa['tanggal_lahir'])) {
+                $ts = strtotime($siswa['tanggal_lahir']);
+                if ($ts !== false) {
+                    $tanggal_lahir = date_id('d F Y', $ts);
+                }
+            }
+            ?>
             <tr>
                 <td class="num">3.</td>
                 <td class="label">Tempat, Tanggal Lahir</td>
                 <td class="separator">:</td>
-                <td><?php echo htmlspecialchars($siswa['tempat_lahir']) . ', ' . date_id('d F Y', strtotime($siswa['tanggal_lahir'])); ?></td>
+                <td><?php echo htmlspecialchars($siswa['tempat_lahir']) . ', ' . $tanggal_lahir; ?></td>
             </tr>
             <tr>
                 <td class="num">4.</td>
