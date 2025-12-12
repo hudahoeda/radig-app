@@ -1,0 +1,5 @@
+services:
+  app:
+    volumes:
+      - ./:/var/www/html
+      - ./docker/php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
