@@ -497,7 +497,7 @@ ob_start();
             width: 25%;
         }
         .footer-table .halaman .page-number:after {
-            content: counter(page) " dari 2";
+            content: counter(page);
         }
     </style>
 </head>
