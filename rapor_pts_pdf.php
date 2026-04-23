@@ -167,10 +167,11 @@ $semua_mapel_query = mysqli_query($koneksi, $query_mapel_string);
 
 $daftar_nilai_pts = [];
 
-// Statement untuk mengambil rata-rata nilai 'Sumatif TP'
-$query_avg_score = mysqli_prepare(
+// Nilai PTS menggunakan rata-rata tertimbang dari komponen Sumatif TP
+// dan penilaian PTS yang saat ini disimpan sebagai Sumatif Akhir Semester.
+$query_pts_score = mysqli_prepare(
     $koneksi,
-    "SELECT AVG(pdn.nilai) as rata_rata_nilai
+    "SELECT ROUND(SUM(pdn.nilai * p.bobot_penilaian) / NULLIF(SUM(p.bobot_penilaian), 0)) AS nilai_pts
      FROM penilaian_detail_nilai pdn
      JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian
      WHERE pdn.id_siswa = ?
@@ -178,11 +179,11 @@ $query_avg_score = mysqli_prepare(
        AND p.id_kelas = ?
        AND p.semester = ?
        AND p.jenis_penilaian = 'Sumatif'
-       AND p.subjenis_penilaian = 'Sumatif TP'"
+       AND p.subjenis_penilaian IN ('Sumatif TP', 'Sumatif Akhir Semester')"
 );
 
-if (!$query_avg_score) {
-    die("Error preparing average score statement: " . mysqli_error($koneksi));
+if (!$query_pts_score) {
+    die("Error preparing PTS score statement: " . mysqli_error($koneksi));
 }
 
 if ($semua_mapel_query) {
@@ -190,12 +191,12 @@ if ($semua_mapel_query) {
         $id_mapel = $mapel['id_mapel'];
         $rata_rata = null;
 
-        mysqli_stmt_bind_param($query_avg_score, "iiii", $id_siswa, $id_mapel, $id_kelas_siswa, $semester_aktif);
-        mysqli_stmt_execute($query_avg_score);
-        $result_avg = mysqli_stmt_get_result($query_avg_score);
+        mysqli_stmt_bind_param($query_pts_score, "iiii", $id_siswa, $id_mapel, $id_kelas_siswa, $semester_aktif);
+        mysqli_stmt_execute($query_pts_score);
+        $result_avg = mysqli_stmt_get_result($query_pts_score);
 
         if ($row_avg = mysqli_fetch_assoc($result_avg)) {
-            $rata_rata = ($row_avg['rata_rata_nilai'] !== null) ? round($row_avg['rata_rata_nilai']) : '-';
+            $rata_rata = ($row_avg['nilai_pts'] !== null) ? $row_avg['nilai_pts'] : '-';
         } else {
             $rata_rata = '-';
         }
@@ -206,7 +207,7 @@ if ($semua_mapel_query) {
         ];
     }
 }
-mysqli_stmt_close($query_avg_score);
+mysqli_stmt_close($query_pts_score);
 
 
 // Mengambil data watermark
