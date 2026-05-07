@@ -1,14 +1,9 @@
 <?php
-// FILE INI ADALAH SALINAN DARI leger_pdf.php
-// TAPI OUTPUTNYA DIUBAH MENJADI EXCEL
-
 session_start();
 include 'koneksi.php';
-// Kita TIDAK memerlukan Dompdf di sini
-// require_once 'libs/autoload.php';
 
 // =================================================================
-// BLOK VALIDASI AKSES (SAMA DENGAN PDF)
+// 1. VALIDASI AKSES
 // =================================================================
 if (!isset($_SESSION['role'])) {
     die("Akses ditolak. Silakan login terlebih dahulu.");
@@ -20,7 +15,7 @@ if ($id_kelas == 0) {
 }
 
 if (!in_array($_SESSION['role'], ['admin', 'guru'])) {
-    die("Akses ditolak. Halaman ini khusus untuk Admin dan Guru.");
+    die("Akses ditolak.");
 }
 
 if ($_SESSION['role'] == 'guru') {
@@ -28,249 +23,286 @@ if ($_SESSION['role'] == 'guru') {
     $stmt_cek = mysqli_prepare($koneksi, "SELECT id_kelas FROM kelas WHERE id_wali_kelas = ? AND id_kelas = ?");
     mysqli_stmt_bind_param($stmt_cek, "ii", $id_guru_login, $id_kelas);
     mysqli_stmt_execute($stmt_cek);
-    $result_cek = mysqli_stmt_get_result($stmt_cek);
-    if (mysqli_num_rows($result_cek) == 0) {
+    if (mysqli_num_rows(mysqli_stmt_get_result($stmt_cek)) == 0) {
         die("Akses ditolak. Anda bukan wali kelas untuk kelas ini.");
     }
 }
+
 // =================================================================
-
-// --- PENGAMBILAN DATA (SAMA DENGAN PDF) ---
-
-// 1. Ambil data kelas dan tahun ajaran aktif
+// 2. PENGAMBILAN DATA KELAS & SISWA
+// =================================================================
 $q_kelas = mysqli_query($koneksi, "SELECT k.nama_kelas, ta.tahun_ajaran FROM kelas k JOIN tahun_ajaran ta ON k.id_tahun_ajaran = ta.id_tahun_ajaran WHERE k.id_kelas=$id_kelas");
 $data_kelas = mysqli_fetch_assoc($q_kelas);
 $nama_kelas = $data_kelas['nama_kelas'] ?? 'N/A';
 $tahun_ajaran = $data_kelas['tahun_ajaran'] ?? 'N/A';
 
-// 2. Ambil data sekolah
-$q_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
-$sekolah = mysqli_fetch_assoc($q_sekolah) ?? [];
-
-// 3. Ambil data wali kelas
-$q_walikelas = mysqli_query($koneksi, "SELECT g.nama_guru, g.nip FROM guru g JOIN kelas k ON g.id_guru = k.id_wali_kelas WHERE k.id_kelas = $id_kelas");
-$walikelas = mysqli_fetch_assoc($q_walikelas) ?? ['nama_guru' => 'Belum Ditentukan', 'nip' => '-'];
-
-// 4. Ambil daftar siswa (TIDAK PERLU DI-CHUNK)
-$result_siswa = mysqli_query($koneksi, "SELECT id_siswa, nisn, nis, nama_lengkap FROM siswa WHERE id_kelas=$id_kelas AND status_siswa='Aktif' ORDER BY nama_lengkap ASC");
-$daftar_siswa_all = mysqli_fetch_all($result_siswa, MYSQLI_ASSOC);
+// Ambil siswa (Active only)
+$result_siswa = mysqli_query($koneksi, "SELECT id_siswa, nis, nama_lengkap FROM siswa WHERE id_kelas=$id_kelas AND status_siswa='Aktif' ORDER BY nama_lengkap ASC");
+$daftar_siswa = mysqli_fetch_all($result_siswa, MYSQLI_ASSOC);
 
 // =================================================================
-// [MODIFIKASI] LOGIKA PENGGABUNGAN MAPEL
+// 3. LOGIKA MAPEL
 // =================================================================
-$result_mapel_raw = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel, kode_mapel, urutan FROM mata_pelajaran ORDER BY urutan ASC");
-$daftar_mapel_mentah = mysqli_fetch_all($result_mapel_raw, MYSQLI_ASSOC);
+$result_mapel = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel, kode_mapel FROM mata_pelajaran ORDER BY urutan ASC");
+$mapel_db = mysqli_fetch_all($result_mapel, MYSQLI_ASSOC);
 
-$daftar_mapel_final = [];
-$id_mapel_agama = [];
-$id_mapel_sbdp = [];
-$pabd_added = false;
+$header_mapel = []; 
+$id_agama = [];     
+$id_sbdp = [];      
+$agama_added = false;
 $sbdp_added = false;
 
-// Kategori mapel berdasarkan nama
-$agama_list = [
-    'Pendidikan Agama Islam dan Budi Pekerti',
-    'Pendidikan Agama Kristen dan Budi Pekerti',
-    'Pendidikan Agama Katolik dan Budi Pekerti',
-    'Pendidikan Agama Hindu dan Budi Pekerti',
-    'Pendidikan Agama Budha dan Budi Pekerti'
-];
-$sbdp_list = ['Seni Rupa', 'Seni Musik', 'Seni Tari', 'Seni Teater', 'Prakarya'];
+$agama_names = ['Pendidikan Agama Islam dan Budi Pekerti', 'Pendidikan Agama Kristen dan Budi Pekerti', 'Pendidikan Agama Katolik dan Budi Pekerti', 'Pendidikan Agama Hindu dan Budi Pekerti', 'Pendidikan Agama Budha dan Budi Pekerti', 'Pendidikan Agama Khonghucu dan Budi Pekerti'];
+$sbdp_names = ['Seni Rupa', 'Seni Musik', 'Seni Tari', 'Seni Teater', 'Prakarya'];
 
-
-foreach ($daftar_mapel_mentah as $mapel) {
-    $nama_mapel = $mapel['nama_mapel'];
-
-    if (in_array($nama_mapel, $agama_list)) {
-        // Jika ini mapel agama
-        $id_mapel_agama[] = $mapel['id_mapel'];
-        if (!$pabd_added) {
-            $daftar_mapel_final[] = ['id_mapel' => 'PABD', 'kode_mapel' => 'PABD'];
-            $pabd_added = true;
+foreach ($mapel_db as $m) {
+    $id_m = (string)$m['id_mapel'];
+    
+    if (in_array($m['nama_mapel'], $agama_names)) {
+        $id_agama[] = $id_m;
+        if (!$agama_added) {
+            $header_mapel[] = ['id' => 'PABD', 'kode' => 'PABD'];
+            $agama_added = true;
         }
-    } elseif (in_array($nama_mapel, $sbdp_list)) {
-        // Jika ini mapel Seni atau Prakarya
-        $id_mapel_sbdp[] = $mapel['id_mapel'];
+    } elseif (in_array($m['nama_mapel'], $sbdp_names)) {
+        $id_sbdp[] = $id_m;
         if (!$sbdp_added) {
-            $daftar_mapel_final[] = ['id_mapel' => 'SBdP', 'kode_mapel' => 'SBdP'];
+            $header_mapel[] = ['id' => 'SBdP', 'kode' => 'SBdP'];
             $sbdp_added = true;
         }
     } else {
-        // Mapel normal
-        $daftar_mapel_final[] = $mapel;
+        $header_mapel[] = ['id' => $id_m, 'kode' => $m['kode_mapel']];
     }
 }
-// =================================================================
-// [AKHIR MODIFIKASI]
-// =================================================================
 
+// =================================================================
+// 4. PENGAMBILAN NILAI
+// =================================================================
+$q_kkm = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'kkm'");
+$kkm = mysqli_fetch_assoc($q_kkm)['nilai_pengaturan'] ?? 75;
 
-// 6. Ambil semua nilai dalam satu query
-$q_nilai = "SELECT rda.nilai_akhir, r.id_siswa, rda.id_mapel FROM rapor_detail_akademik rda JOIN rapor r ON rda.id_rapor = r.id_rapor WHERE r.id_kelas = $id_kelas AND r.id_tahun_ajaran = (SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status='Aktif')";
+$q_nilai = "SELECT rda.nilai_akhir, rda.nilai_katrol, r.id_siswa, rda.id_mapel 
+            FROM rapor_detail_akademik rda 
+            JOIN rapor r ON rda.id_rapor = r.id_rapor 
+            WHERE r.id_kelas = $id_kelas 
+            AND r.id_tahun_ajaran = (SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status='Aktif')";
 $result_nilai = mysqli_query($koneksi, $q_nilai);
-$nilai_leger = [];
-while ($n = mysqli_fetch_assoc($result_nilai)) {
-    $id_mapel_db = $n['id_mapel'];
-    $id_siswa_db = $n['id_siswa'];
-    $nilai_db = $n['nilai_akhir'];
 
-    if (in_array($id_mapel_db, $id_mapel_agama)) {
-        // Simpan nilai agama di key 'PABD' HANYA JIKA nilainya valid
-        if ($nilai_db > 0) {
-            $nilai_leger[$id_siswa_db]['PABD'] = $nilai_db;
-        }
-    } elseif (in_array($id_mapel_db, $id_mapel_sbdp)) {
-        // Kumpulkan semua nilai SBdP (Seni/Prakarya) dalam array
-        if ($nilai_db > 0) {
-            if (!isset($nilai_leger[$id_siswa_db]['SBdP'])) {
-                $nilai_leger[$id_siswa_db]['SBdP'] = [];
-            }
-            $nilai_leger[$id_siswa_db]['SBdP'][] = $nilai_db;
-        }
+$data_nilai = [];
+
+while ($row = mysqli_fetch_assoc($result_nilai)) {
+    $sid = $row['id_siswa'];
+    $mid = (string)$row['id_mapel'];
+    
+    // Pastikan integer
+    $nilai_asli = isset($row['nilai_akhir']) ? (int)$row['nilai_akhir'] : 0;
+    
+    // Nilai Katrol
+    $raw_katrol = $row['nilai_katrol'];
+    $nilai_katrol = ($raw_katrol !== null && $raw_katrol !== '') ? (int)$raw_katrol : 0;
+
+    // LOGIKA PENENTUAN:
+    // Kita butuh DUA nilai untuk ditampilkan: Asli & Final (Rapor)
+    $nilai_rapor = ($nilai_katrol > 0) ? $nilai_katrol : $nilai_asli;
+    $is_katrol = ($nilai_katrol > 0);
+
+    $key_mapel = $mid;
+    if (in_array($mid, $id_agama)) $key_mapel = 'PABD';
+    if (in_array($mid, $id_sbdp)) $key_mapel = 'SBdP';
+
+    // Simpan ke array
+    if ($key_mapel == 'SBdP') {
+        // Untuk SBdP tampung dulu
+        $data_nilai[$sid][$key_mapel]['asli'][] = $nilai_asli;
+        $data_nilai[$sid][$key_mapel]['final'][] = $nilai_rapor;
     } else {
-        // Mapel normal
-        $nilai_leger[$id_siswa_db][$id_mapel_db] = $nilai_db;
+        $data_nilai[$sid][$key_mapel] = [
+            'asli' => $nilai_asli,
+            'final' => $nilai_rapor,
+            'is_katrol' => $is_katrol
+        ];
     }
 }
 
-// [BARU] Proses Rata-rata Nilai SBdP
-foreach ($nilai_leger as $id_siswa => $mapels) {
-    if (isset($mapels['SBdP']) && is_array($mapels['SBdP'])) {
-        $total_nilai_sbdp = array_sum($mapels['SBdP']);
-        $jumlah_mapel_sbdp = count($mapels['SBdP']);
-        if ($jumlah_mapel_sbdp > 0) {
-            $nilai_leger[$id_siswa]['SBdP'] = round($total_nilai_sbdp / $jumlah_mapel_sbdp);
-        } else {
-            $nilai_leger[$id_siswa]['SBdP'] = 0; // Seharusnya tidak terjadi
+$rekap_siswa = []; 
+
+foreach ($daftar_siswa as $k => $siswa) {
+    $sid = $siswa['id_siswa'];
+    $total_nilai = 0;
+    $jumlah_mapel = 0;
+
+    // Hitung Rata-rata SBdP
+    if (isset($data_nilai[$sid]['SBdP']['final']) && is_array($data_nilai[$sid]['SBdP']['final'])) {
+        $arr_asli = $data_nilai[$sid]['SBdP']['asli'];
+        $arr_final = $data_nilai[$sid]['SBdP']['final'];
+        
+        $avg_asli = (count($arr_asli) > 0) ? round(array_sum($arr_asli) / count($arr_asli)) : 0;
+        $avg_final = (count($arr_final) > 0) ? round(array_sum($arr_final) / count($arr_final)) : 0;
+        
+        // Cek apakah hasil rata-rata beda (berarti ada komponen yang dikatrol)
+        $is_katrol_sbdp = ($avg_final > $avg_asli);
+
+        $data_nilai[$sid]['SBdP'] = [
+            'asli' => $avg_asli,
+            'final' => $avg_final,
+            'is_katrol' => $is_katrol_sbdp
+        ];
+    } else {
+        $data_nilai[$sid]['SBdP'] = ['asli' => 0, 'final' => 0, 'is_katrol' => false];
+    }
+
+    // Hitung Total (Berdasarkan Nilai Final/Rapor)
+    foreach ($header_mapel as $hm) {
+        $data = $data_nilai[$sid][$hm['id']] ?? ['final' => 0];
+        $val = $data['final'];
+        if ($val > 0) {
+            $total_nilai += $val;
+            $jumlah_mapel++;
         }
     }
+
+    $rata_rata = ($jumlah_mapel > 0) ? round($total_nilai / $jumlah_mapel, 2) : 0;
+
+    $daftar_siswa[$k]['total'] = $total_nilai;
+    $daftar_siswa[$k]['rata'] = $rata_rata;
+    $rekap_siswa[$sid] = $total_nilai;
 }
 
-// 7. Ambil KKM Dinamis
-$q_kkm = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'kkm' LIMIT 1");
-$d_kkm = mysqli_fetch_assoc($q_kkm);
-$kkm_dinamis = $d_kkm['nilai_pengaturan'] ?? 75;
+arsort($rekap_siswa);
+$rank = 1;
+$rank_map = [];
+foreach ($rekap_siswa as $sid => $total) {
+    $rank_map[$sid] = $rank++;
+}
 
-// --- HEADER UNTUK EKSPOR EXCEL ---
-// Ini harus dijalankan SEBELUM ada output HTML apapun
-$nama_file = "Leger_Kelas_" . str_replace(' ', '_', $nama_kelas) . ".xls";
+// =================================================================
+// 5. OUTPUT EXCEL
+// =================================================================
+$filename = "Leger_Nilai_" . preg_replace('/[^A-Za-z0-9]/', '_', $nama_kelas) . ".xls";
 header("Content-Type: application/vnd.ms-excel");
-header("Content-Disposition: attachment; filename=\"$nama_file\"");
+header("Content-Disposition: attachment; filename=\"$filename\"");
 header("Pragma: no-cache");
 header("Expires: 0");
-
-// --- Mulai membuat HTML untuk EXCEL ---
 ?>
-<!DOCTYPE html>
-<html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
-    <title>Leger Nilai Kelas <?php echo $nama_kelas; ?></title>
-    <meta charset="UTF-8">
-    <style>
-        /* Style sederhana yang bisa dibaca Excel */
-        body { 
-            font-family: Arial, sans-serif; 
-            font-size: 10pt; 
-            color: #333; 
-        }
-        .title {
-            font-size: 16pt;
-            font-weight: bold;
-            text-align: center;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            font-size: 12pt;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        
-        .content-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-        }
-        .content-table th, .content-table td { 
-            border: 1px solid #000; 
-            padding: 5px; 
-            vertical-align: middle;
-        }
-        .content-table thead th { 
-            background-color: #e0e0e0; 
-            color: #000;
-            font-weight: bold; 
-            text-align: center;
-        }
-        .text-center { text-align: center; }
-        .text-left { text-align: left; }
-        .nama-siswa { white-space: nowrap; }
-        .total-avg-col { background-color: #e0e0e0; font-weight: bold; }
-        
-        /* Pewarnaan nilai KKM */
-        .nilai-kurang { background-color: #f8d7da; color: #721c24; }
-        .nilai-cukup { background-color: #d4edda; color: #155724; }
-    </style>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<style>
+    body { font-family: Arial, sans-serif; font-size: 10pt; }
+    .table-main { border-collapse: collapse; width: 100%; border: 1px solid #000; }
+    .table-main th, .table-main td { border: 1px solid #000; padding: 4px; vertical-align: middle; }
+    .text-center { text-align: center; }
+    .text-left { text-align: left; }
+</style>
 </head>
 <body>
-    
-    <div class="title">LEGER NILAI AKHIR SISWA</div>
-    <div class="subtitle">
-        TAHUN AJARAN: <?php echo htmlspecialchars($tahun_ajaran); ?> | KELAS: <?php echo strtoupper(htmlspecialchars($nama_kelas)); ?>
-    </div>
-        
-    <table class="content-table">
+
+    <table border="0" width="100%">
+        <tr>
+            <!-- Colspan disesuaikan: No+NIS+Nama (3) + Mapel*2 + Jml+Rata+Rank (3) -->
+            <td colspan="<?php echo (count($header_mapel) * 2) + 6; ?>" align="center" style="font-size: 14pt; font-weight: bold;">
+                LEGER NILAI AKHIR SISWA
+            </td>
+        </tr>
+        <tr>
+            <td colspan="<?php echo (count($header_mapel) * 2) + 6; ?>" align="center" style="font-size: 11pt;">
+                TAHUN AJARAN: <?php echo htmlspecialchars($tahun_ajaran); ?> | KELAS: <?php echo strtoupper(htmlspecialchars($nama_kelas)); ?>
+            </td>
+        </tr>
+        <tr><td></td></tr>
+    </table>
+
+    <table class="table-main" border="1">
         <thead>
             <tr>
-                <!-- Hapus 'vertical-text' class -->
-                <th rowspan="2">No</th>
-                <th rowspan="2" class="nama-siswa">Nama Siswa</th>
-                <!-- [MODIFIKASI] Gunakan daftar mapel final -->
-                <th colspan="<?php echo count($daftar_mapel_final); ?>">Mata Pelajaran</th>
-                <th rowspan="2">Jumlah</th>
-                <th rowspan="2">Rata-Rata</th>
+                <th rowspan="2" bgcolor="#D9D9D9" width="40">No</th>
+                <th rowspan="2" bgcolor="#D9D9D9" width="100">NIS</th>
+                <th rowspan="2" bgcolor="#D9D9D9" width="250">Nama Siswa</th>
+                <!-- Header Mapel Utama -->
+                <?php foreach ($header_mapel as $hm): ?>
+                    <th colspan="2" bgcolor="#D9D9D9" align="center"><b><?php echo $hm['kode']; ?></b></th>
+                <?php endforeach; ?>
+                
+                <th rowspan="2" bgcolor="#D9D9D9" width="60">Jml</th>
+                <th rowspan="2" bgcolor="#D9D9D9" width="60">Rata</th>
+                <th rowspan="2" bgcolor="#D9D9D9" width="50">Rank</th>
             </tr>
             <tr>
-                <!-- [MODIFIKASI] Gunakan daftar mapel final -->
-                <?php foreach ($daftar_mapel_final as $mapel): ?>
-                    <!-- Hapus 'vertical-text' class -->
-                    <th><?php echo htmlspecialchars($mapel['kode_mapel']); ?></th>
+                <!-- Sub Header Nilai Asli & Rapor -->
+                <?php foreach ($header_mapel as $hm): ?>
+                    <th bgcolor="#EFEFEF" width="40" style="font-size: 8pt;">Asli</th>
+                    <th bgcolor="#EFEFEF" width="40" style="font-size: 8pt;">Rapor</th>
                 <?php endforeach; ?>
             </tr>
         </thead>
         <tbody>
             <?php 
-            $no_urut = 1; 
-            // Loop langsung ke semua siswa, bukan per halaman
-            foreach($daftar_siswa_all as $siswa): 
+            $no = 1;
+            foreach ($daftar_siswa as $siswa): 
+                $sid = $siswa['id_siswa'];
             ?>
-                <tr>
-                    <td class="text-center"><?php echo $no_urut++; ?></td>
-                    <td class="text-left"><?php echo htmlspecialchars($siswa['nama_lengkap']); ?></td>
-                    <?php
-                    $jumlah_nilai = 0;
-                    $jumlah_mapel = 0;
-                    // [MODIFIKASI] Gunakan daftar mapel final
-                    foreach ($daftar_mapel_final as $mapel):
-                        // [MODIFIKASI] Ambil nilai berdasarkan id_mapel (bisa 'PABD', 'SBdP', atau angka)
-                        $nilai = $nilai_leger[$siswa['id_siswa']][$mapel['id_mapel']] ?? 0;
-                        if ($nilai > 0) {
-                            $jumlah_nilai += $nilai;
-                            $jumlah_mapel++;
-                        }
-                        $cell_class = '';
+            <tr>
+                <td align="center"><?php echo $no++; ?></td>
+                <td align="left" style='mso-number-format:"\@";'><?php echo $siswa['nis']; ?></td>
+                <td align="left"><?php echo $siswa['nama_lengkap']; ?></td>
+                
+                <!-- Loop Nilai Mapel -->
+                <?php foreach ($header_mapel as $hm): ?>
+                    <?php 
+                        $key = (string)$hm['id'];
+                        $data = $data_nilai[$sid][$key] ?? ['asli' => 0, 'final' => 0, 'is_katrol' => false];
                         
-                        if ($nilai > 0 && $nilai < $kkm_dinamis) { $cell_class = 'nilai-kurang'; } 
-                        elseif ($nilai >= $kkm_dinamis) { $cell_class = 'nilai-cukup'; }
+                        $n_asli = $data['asli'];
+                        $n_final = $data['final'];
+                        $is_katrol = $data['is_katrol'];
+                        
+                        // Style Rapor (Final)
+                        $td_style_final = "";
+                        $td_bg_final = ""; 
+
+                        // Warna Merah (Kurang KKM)
+                        if ($n_final > 0 && $n_final < $kkm) {
+                            $td_bg_final = 'bgcolor="#FFCCCC"'; 
+                            $td_style_final .= 'color:#990000;';     
+                        }
+                        
+                        // Warna Biru (Katrol)
+                        if ($is_katrol) {
+                            $td_style_final .= 'color:#0000FF; font-weight:bold;';
+                        }
                     ?>
-                        <td class="text-center <?php echo $cell_class; ?>"><?php echo $nilai > 0 ? $nilai : '-'; ?></td>
-                    <?php endforeach; ?>
-                    <td class="text-center total-avg-col"><?php echo $jumlah_nilai; ?></td>
-                    <td class="text-center total-avg-col"><?php echo $jumlah_mapel > 0 ? round($jumlah_nilai / $jumlah_mapel, 2) : '-'; ?></td>
-                </tr>
+                    <!-- Kolom Nilai Asli (Polos) -->
+                    <td align="center" style="color: #555;">
+                        <?php echo ($n_asli > 0) ? $n_asli : '-'; ?>
+                    </td>
+                    
+                    <!-- Kolom Nilai Rapor (Berwarna) -->
+                    <td align="center" <?php echo $td_bg_final; ?> style="<?php echo $td_style_final; ?>">
+                        <?php echo ($n_final > 0) ? $n_final : '-'; ?>
+                    </td>
+                <?php endforeach; ?>
+
+                <!-- Statistik -->
+                <td align="center" bgcolor="#F2F2F2"><b><?php echo $siswa['total']; ?></b></td>
+                <td align="center" bgcolor="#F2F2F2"><b><?php echo $siswa['rata']; ?></b></td>
+                <td align="center" bgcolor="#FFFFCC"><b><?php echo $rank_map[$sid]; ?></b></td>
+            </tr>
             <?php endforeach; ?>
         </tbody>
     </table>
 
-    <!-- Kop surat dan Tanda tangan dihilangkan untuk versi Excel -->
+    <br>
+    <table border="0">
+        <tr><td colspan="3"><b>Keterangan:</b></td></tr>
+        <tr>
+            <td align="center" style="border:1px solid #000; color:#0000FF; font-weight:bold;">100</td>
+            <td> : Nilai Hasil Katrol (Biru & Tebal) pada kolom Rapor</td>
+        </tr>
+        <tr>
+            <td align="center" bgcolor="#FFCCCC" style="border:1px solid #000; color:#990000;">60</td>
+            <td> : Nilai Di Bawah KKM (<?php echo $kkm; ?>)</td>
+        </tr>
+    </table>
 
 </body>
 </html>

@@ -27,6 +27,15 @@ if ($id_ta_terpilih === null) {
     }
 }
 
+// Ambil nama tahun ajaran terpilih untuk tampilan modal
+$nama_ta_terpilih = '';
+foreach ($daftar_ta as $ta) {
+    if ($ta['id_tahun_ajaran'] == $id_ta_terpilih) {
+        $nama_ta_terpilih = $ta['tahun_ajaran'];
+        break;
+    }
+}
+
 // Ambil data kelas berdasarkan tahun ajaran yang dipilih
 $query_kelas = "
     SELECT 
@@ -87,7 +96,11 @@ $result_kelas = mysqli_stmt_get_result($stmt);
                 <p class="lead mb-0 opacity-75">Kelola daftar kelas, wali kelas, dan siswa per tahun ajaran.</p>
             </div>
             <div class="d-flex mt-3 mt-sm-0">
-                <!-- [BARU] Tombol Import -->
+                <!-- Tombol Salin Kelas -->
+                <button type="button" class="btn btn-warning text-dark me-2" data-bs-toggle="modal" data-bs-target="#salinKelasModal">
+                    <i class="bi bi-copy me-2"></i>Salin Kelas
+                </button>
+                <!-- Tombol Import -->
                 <button type="button" class="btn btn-light me-2" data-bs-toggle="modal" data-bs-target="#importKelasModal">
                     <i class="bi bi-upload me-2"></i>Import Kelas
                 </button>
@@ -126,7 +139,16 @@ $result_kelas = mysqli_stmt_get_result($stmt);
                                 <p class="mb-1"><strong>Wali Kelas:</strong></p>
                                 <div class="d-flex align-items-center">
                                     <i class="bi bi-person-circle fs-3 me-2"></i>
-                                    <span><?php echo htmlspecialchars($data['nama_guru'] ?? '<em class="text-muted">Belum Ditentukan</em>'); ?></span>
+                                    <!-- [PERBAIKAN] Logika tampilan wali kelas agar tag HTML tidak di-escape -->
+                                    <span>
+                                        <?php 
+                                            if (!empty($data['nama_guru'])) {
+                                                echo htmlspecialchars($data['nama_guru']);
+                                            } else {
+                                                echo '<em class="text-muted">Belum Ditentukan</em>';
+                                            }
+                                        ?>
+                                    </span>
                                 </div>
                             </div>
                             <hr>
@@ -173,7 +195,71 @@ $result_kelas = mysqli_stmt_get_result($stmt);
     </div>
 </div>
 
-<!-- [BARU] Modal untuk Import Kelas -->
+<!-- Modal Salin Kelas -->
+<div class="modal fade" id="salinKelasModal" tabindex="-1" aria-labelledby="salinKelasModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="salinKelasModalLabel"><i class="bi bi-copy me-2"></i> Salin Data Kelas</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="kelas_aksi.php?aksi=salin_kelas" method="POST">
+                <div class="modal-body">
+                    <!-- Alert Info -->
+                    <div class="alert alert-warning small">
+                        <div class="d-flex">
+                            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                            <div>
+                                <strong>Perhatian:</strong>
+                                Fitur ini akan menduplikasi struktur kelas (Nama Kelas & Fase) ke Tahun Ajaran tujuan.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Target (Read-only) -->
+                    <div class="mb-3">
+                        <label class="form-label text-muted small text-uppercase fw-bold">Ke Tahun Ajaran (Tujuan)</label>
+                        <input type="text" class="form-control bg-light" value="<?php echo htmlspecialchars($nama_ta_terpilih); ?>" readonly>
+                        <input type="hidden" name="id_ta_tujuan" value="<?php echo $id_ta_terpilih; ?>">
+                    </div>
+
+                    <!-- Sumber -->
+                    <div class="mb-3">
+                        <label for="id_ta_sumber" class="form-label fw-bold">Ambil Data Dari (Sumber):</label>
+                        <select name="id_ta_sumber" id="id_ta_sumber" class="form-select" required>
+                            <option value="">-- Pilih Tahun Ajaran Sumber --</option>
+                            <?php foreach ($daftar_ta as $ta): ?>
+                                <?php if ($ta['id_tahun_ajaran'] != $id_ta_terpilih): // Jangan tampilkan TA tujuan di sumber ?>
+                                    <option value="<?php echo $ta['id_tahun_ajaran']; ?>">
+                                        <?php echo $ta['tahun_ajaran'] . ($ta['status'] == 'Aktif' ? ' (Aktif)' : ''); ?>
+                                    </option>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <!-- Opsi Wali Kelas -->
+                    <div class="p-3 border rounded bg-light">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="copy_wali" name="copy_wali" value="1" checked>
+                            <label class="form-check-label fw-bold" for="copy_wali">Salin juga Wali Kelas?</label>
+                        </div>
+                        <div class="form-text mt-1">
+                            Jika diaktifkan, guru yang menjabat wali kelas di tahun sumber akan otomatis dipasangkan kembali di kelas baru.
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-2"></i>Proses Salin</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal untuk Import Kelas -->
 <div class="modal fade" id="importKelasModal" tabindex="-1" aria-labelledby="importKelasModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -241,7 +327,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 <?php
 if (isset($_SESSION['pesan'])) {
-    // [DIUBAH] Cek apakah pesan berupa JSON (dari import) atau teks biasa
+    // Cek apakah pesan berupa JSON (dari import) atau teks biasa
     $pesan = $_SESSION['pesan'];
     if (json_decode($pesan) !== null) {
         echo "<script>Swal.fire(" . $pesan . ");</script>";

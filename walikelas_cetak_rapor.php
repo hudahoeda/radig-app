@@ -281,12 +281,12 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             Swal.fire({
                 title: 'Batalkan Finalisasi?',
-                text: "PERHATIAN! Ini akan mengubah status SEMUA rapor kembali menjadi 'Draft' dan mengizinkan pengeditan ulang. Lanjutkan?",
+                html: "PERHATIAN! Ini akan mengubah status SEMUA rapor kembali menjadi 'Draft' dan mengizinkan pengeditan ulang.<br><br><strong>Tindakan ini juga akan menghapus data NILAI AKADEMIK dan DESKRIPSI lama dari database Rapor, memastikan Finalisasi berikutnya menggunakan data nilai TERBARU.</strong> Lanjutkan?",
                 icon: 'error',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
                 cancelButtonColor: '#3085d6',
-                confirmButtonText: 'Ya, Batalkan!',
+                confirmButtonText: 'Ya, Batalkan dan Hapus Data Lama!',
                 cancelButtonText: 'Tidak'
             }).then((result) => {
                 if (result.isConfirmed) {

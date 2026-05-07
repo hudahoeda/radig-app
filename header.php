@@ -51,9 +51,9 @@ if (isset($koneksi)) {
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- [PENAMBAHAN] CSS untuk Select2 -->
+    <!-- CSS untuk Select2 -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
     
@@ -61,24 +61,30 @@ if (isset($koneksi)) {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- [PENAMBAHAN] JavaScript untuk Select2 -->
+    <!-- JavaScript untuk Select2 -->
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     
     <style>
         :root {
-            /* Palet Warna Anda (Tetap Sama) */
+            /* Palet Warna Anda */
             --primary-color: #26a69a; /* Teal */
+            --primary-gradient: linear-gradient(135deg, #26a69a 0%, #00897b 100%);
             --secondary-color: #00796b; /* Teal Gelap */
-            --sidebar-bg: #004d40; /* Teal Sangat Gelap untuk Sidebar */
+            
+            /* Sidebar Variables */
+            --sidebar-bg: #004d40;
             --sidebar-text: rgba(255, 255, 255, 0.85);
             --sidebar-text-active: #ffffff;
             --sidebar-bg-hover: #00695C;
             --sidebar-bg-active: #00796b;
-            --background-light: #f4f7f6; /* Off-white yang lembut */
-            --text-dark: #333;
+            
+            /* General Variables */
+            --background-light: #f4f7f6;
+            --text-dark: #333333; /* Hitam Pekat */
             --text-muted: #6c757d;
             --border-color: #e0e0e0;
             --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            --navbar-height: 80px;
         }
 
         body {
@@ -86,6 +92,7 @@ if (isset($koneksi)) {
             background-color: var(--background-light);
             color: var(--text-dark);
             font-size: 0.95rem;
+            overflow-x: hidden;
         }
 
         .wrapper {
@@ -94,6 +101,7 @@ if (isset($koneksi)) {
             align-items: stretch;
         }
 
+        /* --- SIDEBAR STYLE (TIDAK DIUBAH) --- */
         #sidebar {
             min-width: 260px;
             max-width: 260px;
@@ -108,9 +116,8 @@ if (isset($koneksi)) {
             display: flex;
             flex-direction: column;
         }
-        #sidebar.active {
-            margin-left: -260px;
-        }
+        #sidebar.active { margin-left: -260px; }
+        
         #sidebar .sidebar-header {
             padding: 1.2rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -131,27 +138,25 @@ if (isset($koneksi)) {
             list-style: none;
             padding: 0;
             margin: 0;
-            overflow-y: auto; /* Agar bisa di-scroll */
-            flex-grow: 1; /* Memenuhi sisa ruang */
+            overflow-y: auto;
+            flex-grow: 1;
         }
-        .mcd-menu li {
-            position: relative;
-        }
+        .mcd-menu li { position: relative; }
         .mcd-menu li a {
             display: block;
             text-decoration: none;
             padding: 15px 20px;
             color: var(--sidebar-text);
-            height: 60px; /* Disesuaikan agar lebih lega */
+            height: 60px;
             position: relative;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             overflow: hidden;
         }
         .mcd-menu li a i {
             float: left;
-            font-size: 1.4rem; /* Disesuaikan */
+            font-size: 1.4rem;
             margin: 0 15px 0 0;
-            line-height: 30px; /* Vertikal align */
+            line-height: 30px;
         }
         .mcd-menu li a strong {
             display: block;
@@ -169,25 +174,14 @@ if (isset($koneksi)) {
             transition: all 300ms linear;
         }
 
-        /* Efek Hover dan Animasi */
         .mcd-menu li:hover > a {
             background-color: var(--sidebar-bg-hover);
             color: var(--sidebar-text-active);
         }
-        .mcd-menu li:hover > a i {
-            -webkit-animation: moveFromTop 300ms ease-in-out;
-            animation: moveFromTop 300ms ease-in-out;
-        }
-        .mcd-menu li:hover a strong {
-            -webkit-animation: moveFromLeft 300ms ease-in-out;
-            animation: moveFromLeft 300ms ease-in-out;
-        }
-        .mcd-menu li:hover a small {
-            -webkit-animation: moveFromRight 300ms ease-in-out;
-            animation: moveFromRight 300ms ease-in-out;
-        }
+        .mcd-menu li:hover > a i { animation: moveFromTop 300ms ease-in-out; }
+        .mcd-menu li:hover a strong { animation: moveFromLeft 300ms ease-in-out; }
+        .mcd-menu li:hover a small { animation: moveFromRight 300ms ease-in-out; }
 
-        /* Gaya Link Aktif */
         .mcd-menu li a.active {
             position: relative;
             color: var(--sidebar-text-active);
@@ -199,23 +193,16 @@ if (isset($koneksi)) {
             padding-left: 24px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
+        
         .mcd-menu li a.active:before {
-            content: "";
-            position: absolute;
-            top: 42%;
-            left: 0;
+            content: ""; position: absolute; top: 42%; left: 0;
             border-left: 5px solid var(--primary-color);
-            border-top: 5px solid transparent;
-            border-bottom: 5px solid transparent;
+            border-top: 5px solid transparent; border-bottom: 5px solid transparent;
         }
         .mcd-menu li a.active:after {
-            content: "";
-            position: absolute;
-            top: 42%;
-            right: 0;
+            content: ""; position: absolute; top: 42%; right: 0;
             border-right: 5px solid var(--primary-color);
-            border-top: 5px solid transparent;
-            border-bottom: 5px solid transparent;
+            border-top: 5px solid transparent; border-bottom: 5px solid transparent;
         }
 
         .mcd-menu .sidebar-heading {
@@ -232,12 +219,8 @@ if (isset($koneksi)) {
             margin-top: auto;
         }
 
-
-        @-webkit-keyframes moveFromTop { from { transform: translateY(200%); } to { transform: translateY(0%); } }
         @keyframes moveFromTop { from { transform: translateY(200%); } to { transform: translateY(0%); } }
-        @-webkit-keyframes moveFromLeft { from { transform: translateX(200%); } to { transform: translateX(0%); } }
         @keyframes moveFromLeft { from { transform: translateX(200%); } to { transform: translateX(0%); } }
-        @-webkit-keyframes moveFromRight { from { transform: translateX(-200%); } to { transform: translateX(0%); } }
         @keyframes moveFromRight { from { transform: translateX(-200%); } to { transform: translateX(0%); } }
 
         .mcd-menu::-webkit-scrollbar { width: 8px; }
@@ -250,25 +233,239 @@ if (isset($koneksi)) {
 
         #content { width: 100%; padding-left: 260px; min-height: 100vh; transition: all 0.3s; }
         #sidebar.active + #content { padding-left: 0; }
-        .top-navbar { padding: 0.8rem 1.5rem; background: #fff; border-bottom: 1px solid var(--border-color); box-shadow: var(--card-shadow); }
-        .top-navbar .dropdown-toggle::after { display: none; }
-        .dropdown-menu { border-radius: 10px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-        .main-content { padding: 2rem; }
-        .card { border: none; border-radius: 12px; box-shadow: var(--card-shadow); margin-bottom: 1.5rem; }
-        .welcome-banner { background: linear-gradient(45deg, var(--primary-color), var(--secondary-color)); color: #fff; border-radius: 12px; padding: 2rem; }
-        .welcome-banner h4 { font-weight: 600; }
-        .app-footer { padding: 1rem 2rem; background-color: #fff; border-top: 1px solid var(--border-color); font-size: 0.85rem; transition: all 0.3s; }
-        .app-footer a { color: var(--text-muted); text-decoration: none; transition: color 0.2s ease; }
-        .app-footer a:hover { color: var(--primary-color); }
-        #sidebar.active + #content .app-footer { padding: 1rem; }
+
+        /* --- [UPDATED] MODERN NAVBAR & BANNER STYLES --- */
+        
+        /* 1. Navbar Container */
+        .top-navbar { 
+            padding: 1rem 2rem; 
+            background: #ffffff; /* Solid White agar teks hitam jelas */
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        /* 2. Brand Text / Page Title */
+        .navbar-brand-text {
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            font-size: 1.25rem;
+            margin-left: 10px;
+            /* Fallback color */
+            color: var(--primary-color);
+        }
+
+        /* 3. Navigation Buttons (Hamburger, Chat, Info) */
+        .nav-btn-icon {
+            width: 45px;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px; /* Lebih rounded */
+            background: #f8f9fa; /* Light gray bg */
+            color: #495057; /* Dark gray icon */
+            border: 1px solid #e9ecef;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            text-decoration: none;
+        }
+
+        .nav-btn-icon:hover {
+            background: #e0f2f1; /* Hint of teal */
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(38, 166, 154, 0.15);
+        }
+        
+        .nav-btn-icon.active-chat {
+             background: #e0f2f1;
+             color: var(--primary-color);
+        }
+
+        /* 4. User Profile Dropdown Trigger */
+        .user-profile-wrapper {
+            padding: 6px 8px 6px 6px;
+            border-radius: 50px;
+            background: #ffffff;
+            border: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            text-decoration: none !important;
+            margin-left: 15px;
+        }
+
+        .user-profile-wrapper:hover, .user-profile-wrapper[aria-expanded="true"] {
+            background: #ffffff;
+            border-color: var(--primary-color);
+            box-shadow: 0 5px 15px rgba(38, 166, 154, 0.1);
+        }
+
+        .user-avatar-frame {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            padding: 2px;
+            background: var(--primary-gradient); /* Teal Gradient Ring */
+            margin-right: 12px;
+        }
+
+        .user-avatar-img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #ffffff;
+        }
+
+        .user-info-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+            margin-right: 15px;
+        }
+        
+        .user-name { 
+            font-weight: 700; 
+            font-size: 0.95rem; 
+            color: #212529 !important; /* Force Black */
+        } 
+        .user-role { 
+            font-size: 0.75rem; 
+            color: var(--primary-color); 
+            font-weight: 500;
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+        }
+
+        /* 5. Dropdown Menu Modern */
+        .dropdown-menu-animate {
+            border: 0;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            margin-top: 15px !important;
+            animation: dropdownFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            overflow: hidden;
+            padding: 8px;
+            background-color: #ffffff;
+            min-width: 220px;
+        }
+        
+        .dropdown-item {
+            padding: 12px 16px;
+            font-size: 0.9rem;
+            color: #333 !important;
+            border-radius: 10px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .dropdown-item:hover {
+            background-color: #e0f2f1; /* Teal lembut */
+            color: var(--secondary-color) !important;
+            transform: translateX(5px);
+        }
+
+        .dropdown-item.text-danger:hover {
+            background-color: #fff5f5;
+            color: #dc3545 !important;
+        }
+
+        .dropdown-header-custom {
+            background: #f8f9fa;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            text-align: center;
+            border: 1px dashed #ced4da;
+        }
+
+        @keyframes dropdownFade {
+            from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* 6. Impersonate Banner Styles */
+        .impersonate-wrapper {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2000;
+            width: auto;
+            max-width: 90%;
+            animation: slideDown 0.5s ease-out;
+        }
+
+        .impersonate-card {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 50px;
+            box-shadow: 0 10px 25px rgba(245, 124, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 2px solid rgba(255,255,255,0.3);
+            backdrop-filter: blur(5px);
+        }
+
+        .impersonate-text {
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .btn-impersonate-back {
+            background: white;
+            color: #f57c00;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .btn-impersonate-back:hover {
+            background: #fff3e0;
+            color: #e65100;
+            transform: scale(1.05);
+        }
+        
+        @keyframes slideDown {
+            from { top: -100px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
+
+        /* Spacer agar konten tidak tertutup fixed banner jika ada */
+        .impersonate-spacer { height: 80px; }
+
         @media (max-width: 768px) {
             #sidebar { margin-left: -260px; }
             #sidebar.active { margin-left: 0; }
             #content { padding-left: 0; }
             .top-navbar { padding: 0.8rem 1rem; }
             .main-content { padding: 1rem; }
+            .user-info-text { display: none; } /* Hide user text on mobile */
+            .user-avatar-frame { margin-right: 0; }
+            .user-profile-wrapper { padding: 4px; margin-left: 10px; }
         }
         
+        /* Modal Styles */
         #pengembangModal .modal-header { background-color: var(--sidebar-bg); color: white; }
         #pengembangModal .profile-pic { width: 150px; height: 150px; object-fit: cover; border: 5px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         #pengembangModal .list-group-item { border: none; padding-left: 0; padding-right: 0; }
@@ -279,53 +476,35 @@ if (isset($koneksi)) {
 <body>
 
 <!-- ====================================================== -->
-<!-- ### KODE BANNER IMPERSONATE DIMASUKKAN DI SINI ### -->
+<!-- ### BANNER IMPERSONATE MODERN ### -->
 <!-- ====================================================== -->
 <?php
 // Cek apakah ini adalah sesi penyamaran (impersonate)
 if (isset($_SESSION['admin_asal_id'])) {
-    
     echo '
-    <div style="
-        background-color: #ffc107; 
-        color: #333; 
-        padding: 10px 20px; 
-        text-align: center; 
-        font-weight: bold; 
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        z-index: 9999;
-        border-bottom: 2px solid #e0a800;
-        font-family: Arial, sans-serif;
-    ">
-        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        Anda sedang login sebagai pengguna lain. 
-        <a href="admin_aksi.php?aksi=kembali" style="
-            color: #000; 
-            background-color: #fff; 
-            padding: 5px 10px; 
-            border-radius: 5px; 
-            text-decoration: none; 
-            margin-left: 15px;
-            border: 1px solid #333;
-        ">
-            <i class="bi bi-box-arrow-right me-1"></i> Kembali ke Akun Admin
-        </a>
+    <div class="impersonate-wrapper">
+        <div class="impersonate-card">
+            <i class="bi bi-incognito fs-4"></i>
+            <div class="impersonate-text">
+                Mode Penyamaran Aktif
+            </div>
+            <a href="admin_aksi.php?aksi=kembali" class="btn-impersonate-back">
+                <i class="bi bi-arrow-left-circle-fill me-1"></i> KEMBALI ADMIN
+            </a>
+        </div>
     </div>
-    <div style="height: 50px;"></div> 
+    <!-- Spacer untuk menurunkan konten agar tidak tertutup banner -->
+    <div class="impersonate-spacer"></div>
     '; 
-    // Spacer agar konten di bawahnya tidak tertutup banner
 }
 ?>
 <!-- ====================================================== -->
-<!-- ### AKHIR KODE BANNER IMPERSONATE ### -->
+<!-- ### AKHIR BANNER IMPERSONATE ### -->
 <!-- ====================================================== -->
 
 <div class="wrapper">
     <nav id="sidebar">
-        <!-- ... existing code ... -->
+        <!-- ... LOGIKA SIDEBAR TETAP SAMA ... -->
         <div class="sidebar-header">
             <a href="dashboard.php" class="sidebar-brand text-decoration-none d-flex align-items-center">
                 <img src="uploads/logo-aplikasi.png" alt="Logo">
@@ -402,10 +581,15 @@ if (isset($_SESSION['admin_asal_id'])) {
                     <li><a href="walikelas_data_rapor.php" class="<?php if ($current_page == 'walikelas_data_rapor.php') echo 'active'; ?>"><i class="bi bi-person-lines-fill"></i><strong>Input Data Rapor</strong><small>Absensi & Catatan</small></a></li>
                     <li><a href="walikelas_identitas_siswa.php" class="<?php if ($current_page == 'walikelas_identitas_siswa.php') echo 'active'; ?>"><i class="bi bi-person-vcard"></i><strong>Identitas Siswa</strong><small>Kelola data siswa</small></a></li>
                     <li><a href="walikelas_daftarkan_ekskul.php" class="<?php if ($current_page == 'walikelas_daftarkan_ekskul.php') echo 'active'; ?>"><i class="bi bi-person-check-fill"></i><strong>Kelola Ekskul</strong><small>Kelola ekskul siswa</small></a></li>
-                    <li><a href="walikelas_proses_rapor.php" class="<?php if ($current_page == 'walikelas_proses_rapor.php') echo 'active'; ?>"><i class="bi bi-pencil-square"></i><strong>Proses Intrakurikuler</strong><small>Proses nilai akhir</small></a></li>
+                    <li><a href="walikelas_proses_rapor.php" class="<?php if ($current_page == 'walikelas_proses_rapor.php') echo 'active'; ?>"><i class="bi bi-pencil-square"></i><strong>Pantau Nilai</strong><small>Memantau Proggres Nilai</small></a></li>
                     <li><a href="walikelas_proses_kokurikuler.php" class="<?php if ($current_page == 'walikelas_proses_kokurikuler.php') echo 'active'; ?>"><i class="bi bi-chat-quote-fill"></i><strong>Proses Kokurikuler</strong><small>Proses nilai projek</small></a></li>
                     <li><a href="walikelas_cetak_rapor.php" class="<?php if ($current_page == 'walikelas_cetak_rapor.php') echo 'active'; ?>"><i class="bi bi-printer-fill"></i><strong>Cetak Rapor</strong><small>Cetak rapor & leger</small></a></li>
                 <?php } ?>
+            <?php elseif ($role == 'siswa'): ?>
+                 <li class="sidebar-heading">Menu Siswa</li>
+                 <li><a href="siswa_lihat_nilai.php" class="<?php if ($current_page == 'siswa_lihat_nilai.php') echo 'active'; ?>"><i class="bi bi-clipboard2-data-fill menu-icon"></i><div class="menu-text"><strong>Lihat Nilai</strong><small>Nilai Formatif & Sumatif</small></div></a></li>
+                 <li><a href="siswa_lihat_aktivitas.php" class="<?php if ($current_page == 'siswa_lihat_aktivitas.php') echo 'active'; ?>"><i class="bi bi-award-fill"></i><div class="menu-text"><strong>Lihat Aktivitas</strong><small>Kokurikuler & Ekstrakurikuler</small></div></a></li>
+                 <li><a href="rapor_pdf.php?id_siswa=<?php echo $_SESSION['id_siswa'] ?? 0; ?>" target="_blank"><i class="bi bi-file-earmark-pdf-fill menu-icon"></i><div class="menu-text"><strong>Download Rapor</strong><small>Unduh rapor semester</small></div></a></li>
             <?php endif; ?>
 
             <li class="logout-link">
@@ -419,67 +603,82 @@ if (isset($_SESSION['admin_asal_id'])) {
     </nav>
 
     <div id="content">
-        <nav class="top-navbar navbar navbar-expand-lg navbar-light">
-            <div class="container-fluid">
-                <button type="button" id="sidebarCollapse" class="btn btn-light me-3">
-                    <i class="bi bi-list"></i>
-                </button>
+        <!-- [MODIFIKASI] NAVBAR SUPER MODERN -->
+        <nav class="top-navbar">
+            <div class="container-fluid d-flex align-items-center justify-content-between p-0">
                 
-                <span class="navbar-text fw-bold text-dark d-none d-md-block">
-                    <?php 
-                        if ($role == 'admin') echo "Panel Administrator";
-                        elseif ($role == 'guru') echo "Panel Guru";
-                        elseif ($role == 'siswa') echo "Portal Siswa";
-                   ?>
-                </span>
+                <div class="d-flex align-items-center">
+                    <!-- Tombol Sidebar Toggle -->
+                    <button type="button" id="sidebarCollapse" class="nav-btn-icon me-3">
+                        <i class="bi bi-list fs-5"></i>
+                    </button>
+                    
+                    <!-- Judul Halaman -->
+                    <span class="navbar-brand-text d-none d-md-block">
+                        <?php 
+                            if ($role == 'admin') echo "Administrator Panel";
+                            elseif ($role == 'guru') echo "Workspace Guru";
+                            elseif ($role == 'siswa') echo "Portal Akademik Siswa";
+                        ?>
+                    </span>
+                </div>
 
-                <ul class="navbar-nav ms-auto">
-                    <!-- [BARU] Tombol Chat -->
-                    <?php if ($role != 'admin'): // Sembunyikan untuk admin ?>
-                    <li class="nav-item me-3 d-flex align-items-center">
-                        <a href="chat.php" class="btn btn-outline-secondary rounded-circle position-relative" data-bs-toggle="tooltip" title="Pesan" data-bs-placement="bottom">
-                            <i class="bi bi-chat-dots-fill"></i>
-                            <span id="chat-notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="display: none; border: 2px solid white;"></span>
-                        </a>
-                    </li>
+                <div class="d-flex align-items-center">
+                    <!-- Tombol Chat -->
+                    <?php if ($role != 'admin'): ?>
+                    <a href="chat.php" class="nav-btn-icon me-3 position-relative" data-bs-toggle="tooltip" title="Pesan" data-bs-placement="bottom">
+                        <i class="bi bi-chat-text-fill fs-5"></i>
+                        <span id="chat-notification-badge" class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle" style="display: none;">
+                            <span class="visually-hidden">Pesan baru</span>
+                        </span>
+                    </a>
                     <?php endif; ?>
-                    <!-- [SELESAI BARU] -->
 
-                    <li class="nav-item me-2 d-flex align-items-center">
-                        <button class="btn btn-outline-secondary rounded-circle" type="button" data-bs-toggle="modal" data-bs-target="#pengembangModal" title="Info Pengembang" data-bs-placement="bottom">
-                           <i class="bi bi-info-lg"></i>
-                        </button>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <img src="<?php echo $foto_profil_path; ?>" alt="Foto Profil" class="rounded-circle me-2" style="width: 32px; height: 32px; object-fit: cover;">
-                            <div>
-                                <div class="fw-bold"><?php echo htmlspecialchars($nama_pengguna); ?></div>
-                                <small class="text-muted text-capitalize"><?php echo htmlspecialchars($role); ?></small>
+                    <!-- Tombol Info -->
+                    <button class="nav-btn-icon me-3 d-none d-sm-flex" type="button" data-bs-toggle="modal" data-bs-target="#pengembangModal" title="Info Pengembang">
+                       <i class="bi bi-info-circle-fill fs-5"></i>
+                    </button>
+
+                    <!-- Profile Dropdown -->
+                    <div class="dropdown">
+                        <a class="user-profile-wrapper" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <div class="user-avatar-frame">
+                                <img src="<?php echo $foto_profil_path; ?>" alt="Foto Profil" class="user-avatar-img">
                             </div>
+                            <div class="user-info-text d-none d-md-flex">
+                                <span class="user-name"><?php echo htmlspecialchars($nama_pengguna); ?></span>
+                                <span class="user-role"><?php echo htmlspecialchars($role); ?></span>
+                            </div>
+                            <i class="bi bi-chevron-down small text-muted d-none d-md-block me-2"></i>
                         </a>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                            <!-- [PERBAIKAN] Logika untuk link profil dinamis -->
+                        
+                        <ul class="dropdown-menu dropdown-menu-end dropdown-menu-animate" aria-labelledby="navbarDropdown">
+                            <li>
+                                <div class="dropdown-header-custom">
+                                    <small class="text-muted d-block" style="font-size: 0.7rem;">ACCOUNT</small>
+                                    <span class="fw-bold text-dark"><?php echo htmlspecialchars($nama_pengguna); ?></span>
+                                </div>
+                            </li>
                             <?php
-                            // Tentukan halaman profil berdasarkan role
-                            $link_profil = "profil_edit.php"; // Default untuk admin/guru
+                            $link_profil = "profil_edit.php";
                             if ($role == 'siswa') {
                                 $link_profil = "profil_siswa_edit.php";
                             }
                             ?>
-                            <li><a class="dropdown-item" href="<?php echo $link_profil; ?>">Profil Saya</a></li>
-                            <!-- [AKHIR PERBAIKAN] -->
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i> Logout</a></li>
+                            <li><a class="dropdown-item" href="<?php echo $link_profil; ?>"><i class="bi bi-person-gear me-2 text-primary"></i> Pengaturan Profil</a></li>
+                            <li class="d-sm-none"><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#pengembangModal"><i class="bi bi-info-circle me-2 text-info"></i> Info Pengembang</a></li>
+                            <li><hr class="dropdown-divider my-2"></li>
+                            <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i> Keluar Aplikasi</a></li>
                         </ul>
-                    </li>
-                </ul>
+                    </div>
+                </div>
             </div>
         </nav>
 
         <main class="main-content">
+
+<!-- MODAL INFO PENGEMBANG (TIDAK DIUBAH) -->
 <div class="modal fade" id="pengembangModal" tabindex="-1" aria-labelledby="pengembangModalLabel" aria-hidden="true">
-    <!-- ... existing code ... -->
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">

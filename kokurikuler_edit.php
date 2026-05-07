@@ -50,17 +50,17 @@ $dimensi_lulusan = [
     'Komunikasi' => ['icon' => 'bi-chat-quote-fill', 'desc' => 'Menyampaikan dan menerima gagasan secara efektif dan santun.']
 ];
 
-// <!-- TAMBAHAN: Ambil data guru untuk dropdown koordinator -->
+// Ambil data guru untuk dropdown koordinator
 $query_guru = "SELECT id_guru, nama_guru FROM guru WHERE role IN ('guru', 'admin') ORDER BY nama_guru ASC";
 $result_guru = mysqli_query($koneksi, $query_guru);
 $daftar_guru = mysqli_fetch_all($result_guru, MYSQLI_ASSOC);
 
-// <!-- TAMBAHAN: Ambil data mapel untuk dropdown multiselect -->
+// Ambil data mapel untuk dropdown multiselect
 $query_mapel = "SELECT id_mapel, nama_mapel FROM mata_pelajaran ORDER BY urutan, nama_mapel ASC";
 $result_mapel = mysqli_query($koneksi, $query_mapel);
 $daftar_mapel = mysqli_fetch_all($result_mapel, MYSQLI_ASSOC);
 
-// <!-- TAMBAHAN: Ambil data mapel yang SUDAH TERPILIH untuk kegiatan ini -->
+// Ambil data mapel yang SUDAH TERPILIH untuk kegiatan ini
 $query_mapel_terpilih = "SELECT id_mapel FROM kokurikuler_mapel_terlibat WHERE id_kegiatan = ?";
 $stmt_mapel_terpilih = mysqli_prepare($koneksi, $query_mapel_terpilih);
 mysqli_stmt_bind_param($stmt_mapel_terpilih, "i", $id_kegiatan);
@@ -71,6 +71,30 @@ while($row = mysqli_fetch_assoc($result_mapel_terpilih)) {
     $mapel_terpilih_ids[] = $row['id_mapel'];
 }
 
+// =========================================================================
+// [BARU] LOGIKA KELAS SASARAN
+// =========================================================================
+
+// 1. Ambil Tahun Ajaran Aktif (Agar opsi kelas yang muncul relevan)
+$q_ta = mysqli_query($koneksi, "SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
+$ta_aktif = mysqli_fetch_assoc($q_ta);
+$id_ta_aktif = $ta_aktif['id_tahun_ajaran'] ?? 0;
+
+// 2. Ambil Semua Kelas Aktif
+$query_kelas = "SELECT id_kelas, nama_kelas FROM kelas WHERE id_tahun_ajaran = $id_ta_aktif ORDER BY nama_kelas ASC";
+$result_kelas = mysqli_query($koneksi, $query_kelas);
+$daftar_kelas = mysqli_fetch_all($result_kelas, MYSQLI_ASSOC);
+
+// 3. Ambil Kelas yang SUDAH TERPILIH untuk kegiatan ini
+$query_kelas_terpilih = "SELECT id_kelas FROM kokurikuler_kelas_terlibat WHERE id_kegiatan = ?";
+$stmt_kelas_terpilih = mysqli_prepare($koneksi, $query_kelas_terpilih);
+mysqli_stmt_bind_param($stmt_kelas_terpilih, "i", $id_kegiatan);
+mysqli_stmt_execute($stmt_kelas_terpilih);
+$result_kelas_terpilih = mysqli_stmt_get_result($stmt_kelas_terpilih);
+$kelas_terpilih_ids = [];
+while($row = mysqli_fetch_assoc($result_kelas_terpilih)) {
+    $kelas_terpilih_ids[] = $row['id_kelas'];
+}
 ?>
 
 <style>
@@ -83,10 +107,17 @@ while($row = mysqli_fetch_assoc($result_mapel_terpilih)) {
     .dimension-card .dimension-icon { font-size: 2rem; color: var(--primary-color); transition: color 0.2s ease-in-out; }
     .dimension-card .form-check-input { display: none; }
     
-    /* <!-- TAMBAHAN: Style untuk select multiple agar lebih jelas --> */
-    select[multiple] {
-        height: auto;
-        min-height: 150px; /* Atur tinggi minimal agar terlihat seperti box */
+    /* [BARU] Style untuk checklist box (sama dengan halaman tambah) */
+    .checklist-box {
+        height: 180px; 
+        overflow-y: auto; 
+        border: 1px solid var(--border-color);
+        padding: 1rem;
+        border-radius: 0.375rem;
+        background-color: #fff;
+    }
+    .checklist-box .form-check {
+        margin-bottom: 0.5rem; 
     }
 </style>
 
@@ -102,7 +133,7 @@ while($row = mysqli_fetch_assoc($result_mapel_terpilih)) {
     </div>
 
     <div class="card shadow-sm">
-        <form action="kokurikuler_aksi.php?aksi=update" method="POST">
+        <form action="kokurikuler_aksi.php?aksi=update" method="POST" id="formKokurikuler">
             <input type="hidden" name="id_kegiatan" value="<?php echo $id_kegiatan; ?>">
             <div class="card-body p-4 p-md-5">
                 <div class="row g-5">
@@ -128,9 +159,7 @@ while($row = mysqli_fetch_assoc($result_mapel_terpilih)) {
                             </select>
                         </div>
 
-                        <!-- ==================================================== -->
-                        <!-- TAMBAHAN: Form Koordinator (dengan data terpilih) -->
-                        <!-- ==================================================== -->
+                        <!-- Form Koordinator -->
                         <div class="mb-3">
                             <label for="id_koordinator" class="form-label fw-bold">Pilih Koordinator Projek</label>
                             <select class="form-select" id="id_koordinator" name="id_koordinator" required>
@@ -145,19 +174,55 @@ while($row = mysqli_fetch_assoc($result_mapel_terpilih)) {
                         </div>
 
                         <!-- ==================================================== -->
-                        <!-- TAMBAHAN: Form Mapel Terlibat (dengan data terpilih) -->
+                        <!-- [BARU] Form Pilihan Kelas (Edit Mode) -->
                         <!-- ==================================================== -->
                         <div class="mb-3">
-                            <label for="mapel_terlibat" class="form-label fw-bold">Pilih Mapel yang Berperan</label>
-                            <select class="form-select" id="mapel_terlibat" name="mapel_terlibat[]" multiple required>
+                            <label class="form-label fw-bold text-success">Pilih Kelas Peserta <span class="text-danger">*</span></label>
+                            <div class="checklist-box" id="kelas_sasaran">
+                                <?php if (empty($daftar_kelas)): ?>
+                                    <p class="text-danger small">Tidak ada kelas aktif di Tahun Ajaran ini.</p>
+                                <?php else: ?>
+                                    <!-- Tombol centang semua -->
+                                    <div class="form-check border-bottom pb-2 mb-2">
+                                        <input class="form-check-input" type="checkbox" id="checkAllKelas">
+                                        <label class="form-check-label fw-bold" for="checkAllKelas">Pilih Semua Kelas</label>
+                                    </div>
+                                    <?php foreach($daftar_kelas as $kelas): 
+                                        $id_kelas_check = 'kelas_' . $kelas['id_kelas'];
+                                        // Cek apakah kelas ini ada di array $kelas_terpilih_ids
+                                        $checked = in_array($kelas['id_kelas'], $kelas_terpilih_ids) ? 'checked' : '';
+                                    ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input kelas-checkbox" type="checkbox" name="kelas_sasaran[]" value="<?php echo $kelas['id_kelas']; ?>" id="<?php echo $id_kelas_check; ?>" <?php echo $checked; ?>>
+                                        <label class="form-check-label" for="<?php echo $id_kelas_check; ?>">
+                                            <?php echo htmlspecialchars($kelas['nama_kelas']); ?>
+                                        </label>
+                                    </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="form-text text-success">
+                                <i class="bi bi-info-circle"></i> Sesuaikan kelas peserta jika ada perubahan.
+                            </div>
+                        </div>
+
+                        <!-- Form Mapel Terlibat -->
+                        <div class="mb-3">
+                            <label for="mapel_terlibat" class="form-label fw-bold">Mapel yang Berperan</label>
+                            <div class="checklist-box">
                                 <?php foreach($daftar_mapel as $mapel): ?>
-                                    <?php $selected = (in_array($mapel['id_mapel'], $mapel_terpilih_ids)) ? 'selected' : ''; ?>
-                                    <option value="<?php echo $mapel['id_mapel']; ?>" <?php echo $selected; ?>>
-                                        <?php echo htmlspecialchars($mapel['nama_mapel']); ?>
-                                    </option>
+                                    <?php 
+                                    $selected = (in_array($mapel['id_mapel'], $mapel_terpilih_ids)) ? 'checked' : ''; 
+                                    $id_mapel_check = 'mapel_' . $mapel['id_mapel'];
+                                    ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="mapel_terlibat[]" value="<?php echo $mapel['id_mapel']; ?>" id="<?php echo $id_mapel_check; ?>" <?php echo $selected; ?>>
+                                        <label class="form-check-label" for="<?php echo $id_mapel_check; ?>">
+                                            <?php echo htmlspecialchars($mapel['nama_mapel']); ?>
+                                        </label>
+                                    </div>
                                 <?php endforeach; ?>
-                            </select>
-                            <div class="form-text">Tahan Ctrl (atau Cmd di Mac) untuk memilih lebih dari satu mapel.</div>
+                            </div>
                         </div>
 
                     </div>
@@ -199,6 +264,53 @@ function toggleDimension(cardElement, checkboxId) {
     checkbox.checked = !checkbox.checked;
     cardElement.classList.toggle('selected', checkbox.checked);
 }
+
+$(document).ready(function() {
+    // 1. Logika Check All untuk Kelas (Sama seperti halaman tambah)
+    function checkStatusSelectAll() {
+        if ($('.kelas-checkbox:checked').length == $('.kelas-checkbox').length) {
+            $('#checkAllKelas').prop('checked', true);
+        } else {
+            $('#checkAllKelas').prop('checked', false);
+        }
+    }
+    
+    // Jalankan saat halaman load (karena ini edit, mungkin semua sudah terpilih)
+    checkStatusSelectAll();
+
+    $('#checkAllKelas').change(function() {
+        $('.kelas-checkbox').prop('checked', $(this).prop('checked'));
+    });
+
+    $('.kelas-checkbox').change(function() {
+        checkStatusSelectAll();
+    });
+
+    // 2. Validasi Form saat Submit
+    $('#formKokurikuler').on('submit', function(e) {
+        
+        // Cek Dimensi
+        if ($('input[name="dimensi[]"]:checked').length === 0) {
+            e.preventDefault(); 
+            Swal.fire({icon: 'error', title: 'Error', text: 'Pilih minimal satu Dimensi Profil!'});
+            return false;
+        }
+
+        // Cek Mapel Terlibat
+        if ($('input[name="mapel_terlibat[]"]:checked').length === 0) {
+            e.preventDefault();
+            Swal.fire({icon: 'error', title: 'Error', text: 'Pilih minimal satu Mata Pelajaran!'});
+            return false;
+        }
+
+        // Cek Kelas Sasaran (PENTING AGAR TIDAK KOSONG SAAT DI-UPDATE)
+        if ($('input[name="kelas_sasaran[]"]:checked').length === 0) {
+            e.preventDefault();
+            Swal.fire({icon: 'error', title: 'Error', text: 'Anda harus memilih minimal satu KELAS peserta untuk kegiatan ini!'});
+            return false;
+        }
+    });
+});
 </script>
 
 <?php include 'footer.php'; ?>

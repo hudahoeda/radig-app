@@ -7,6 +7,7 @@ include 'header.php';
 // ===========================================================
 // Pastikan hanya GURU yang bisa mengakses halaman ini, bukan admin
 if ($_SESSION['role'] != 'guru') {
+    // PERBAIKAN: Mengganti window->location menjadi window.location
     echo "<script>Swal.fire({icon: 'error', title: 'Akses Ditolak', text: 'Halaman ini hanya untuk Guru.'}).then(() => window.location = 'dashboard.php');</script>";
     include 'footer.php';
     exit;
@@ -43,7 +44,7 @@ $penugasan_by_mapel = [];
     .kolom-katrol { display: none; background-color: #fff3cd !important; width: 100px; }
     .input-katrol { width: 100%; text-align: center; border: 1px solid #ffc107; border-radius: 8px; padding: 6px; font-weight: 800; color: #856404; transition: all 0.3s; }
     .input-katrol:focus { outline: none; border-color: #d39e00; box-shadow: 0 0 8px rgba(255, 193, 7, 0.5); transform: scale(1.05); }
-    .badge-katrol-aktif { border: 2px solid #ffc107; color: #000; background-color: #fff3cd !important; box-shadow: 0 0 10px rgba(255, 193, 7, 0.4); }
+    .badge-katrol-aktif { border: 2px solid #ffc107; color: #000; background-color: #fff3cd !important; box-shadow: 0 0 10px rgba(255, 193, 7, 0.6); }
 
     /* Modern Toggle Switch */
     .toggle-wrapper { position: relative; }
@@ -343,6 +344,7 @@ else:
             // Pecah TP (jika satu penilaian mencakup banyak TP)
             $tps_individu = explode('|||', $d_nilai['deskripsi_tps']);
             foreach($tps_individu as $desc_tp) {
+                // Rata-rata sederhana per TP (meskipun TP muncul di beberapa asesmen)
                 if (!isset($skor_per_tp[$desc_tp])) { $skor_per_tp[$desc_tp] = []; }
                 $skor_per_tp[$desc_tp][] = $d_nilai['nilai'];
             }
@@ -364,88 +366,93 @@ else:
         // Hitung Nilai Akhir
         $nilai_akhir = ($total_bobot > 0) ? round($total_nilai_x_bobot / $total_bobot) : null;
         
-        // --- LOGIKA BARU DESKRIPSI (PANDUAN 2025) ---
+        // --- LOGIKA BARU DESKRIPSI (PANDUAN 2025: LOGIKA PRIORITAS 2/2) ---
         $deskripsi_final = '';
         if ($nilai_akhir !== null && !empty($skor_per_tp)) {
-            // 1. Hitung Rata-rata per TP dan Bersihkan Kalimat
+            // 1. Hitung Rata-rata Akhir Per TP & Bersihkan Kalimat
             $rekap_tp = [];
+            $kata_hapus = ['Peserta didik dapat', 'Peserta didik mampu', 'peserta didik mampu', 'siswa dapat', 'siswa mampu', 'mampu', 'memahami', 'menguasai', 'menjelaskan', 'menganalisis', 'mengidentifikasi', 'menentukan', 'menunjukkan'];
+
             foreach ($skor_per_tp as $deskripsi => $skor_array) {
                 $avg = array_sum($skor_array) / count($skor_array);
+                
                 // Bersihkan deskripsi dari kata kerja operasional yang berulang
-                $desc_clean = lcfirst(trim(str_replace(
-                    ['Peserta didik dapat', 'Peserta didik mampu', 'peserta didik mampu', 'mampu', 'memahami', 'menguasai', 'menjelaskan', 'menganalisis'], 
-                    '', 
-                    $deskripsi
-                )));
-                $rekap_tp[$desc_clean] = $avg;
-            }
+                $desc_clean = trim(str_ireplace($kata_hapus, '', $deskripsi));
+                $desc_clean = preg_replace('/\s+/', ' ', $desc_clean); // Hapus spasi ganda
+                $desc_clean = lcfirst($desc_clean);
 
-            // 2. Urutkan Nilai TP dari Tertinggi ke Terendah
-            arsort($rekap_tp); 
-
-            // 3. Ambil TP Tertinggi (Maksimal 2 TP teratas untuk deskripsi positif)
-            $top_tp = array_slice($rekap_tp, 0, 2, true); 
-            $kalimat_positif = [];
-            foreach($top_tp as $tp => $val) {
-                // Masukkan ke deskripsi positif jika nilainya Bagus (>= KKM)
-                if($val >= $kkm) {
-                    $kalimat_positif[] = $tp;
+                // Jika deskripsi sudah ada, gunakan nilai rata-rata tertinggi
+                if (!isset($rekap_tp[$desc_clean]) || $rekap_tp[$desc_clean]['avg'] < $avg) {
+                     $rekap_tp[$desc_clean] = ['avg' => $avg, 'original_desc' => $deskripsi];
                 }
             }
 
-            // 4. Ambil TP Terendah (Maksimal 2 TP terbawah untuk deskripsi intervensi)
-            // Ambil 2 terakhir dari array yang sudah diurutkan (terendah)
-            $bottom_tp = array_slice($rekap_tp, -2, 2, true);
-            // Balik urutan biar yang paling jelek disebut terakhir atau terpisah, lalu diurutkan lagi
-            asort($bottom_tp); 
+            // 2. Filter & Urutkan
+            $tp_lulus = [];
+            $tp_remedi = [];
+
+            foreach ($rekap_tp as $clean_desc => $data) {
+                if ($data['avg'] >= $kkm) {
+                    $tp_lulus[$clean_desc] = $data['avg'];
+                } else {
+                    $tp_remedi[$clean_desc] = $data['avg'];
+                }
+            }
+
+            // Urutkan untuk ambil Top 2 LULUS dan Top 2 REMEDI
+            arsort($tp_lulus); // Tertinggi ke Terendah (Lulus)
+            asort($tp_remedi); // Terendah ke Tertinggi (Remedi/Perlu Bimbingan)
+
+            // Ambil maksimal 2 TP terbaik dan terburuk
+            $top_tp = array_slice(array_keys($tp_lulus), 0, 2);
+            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 2); 
             
-            $kalimat_negatif = [];
-            foreach($bottom_tp as $tp => $val) {
-                // Masukkan ke deskripsi perlu bimbingan jika nilainya di bawah KKM
-                // ATAU jika nilainya pas-pasan (opsional, di sini kita set < KKM)
-                if($val < $kkm) {
-                    $kalimat_negatif[] = $tp;
-                }
-            }
-
-            // 5. Susun Deskripsi Final
+            // 3. Susun Deskripsi Final
             $deskripsi_draf = "";
             
-            // Kalimat Kekuatan
-            if (!empty($kalimat_positif)) {
-                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $kalimat_positif) . ". ";
+            // Kalimat Kekuatan (Top 2 LULUS)
+            if (!empty($top_tp)) {
+                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
+            } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
+                // Fallback: Jika nilai akhir tuntas, tapi TP tidak ada yang di atas KKM (semua TP nilainya persis KKM)
+                $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
             }
             
-            // Kalimat Kelemahan/Intervensi
-            if (!empty($kalimat_negatif)) {
-                $deskripsi_draf .= "Perlu pendampingan lebih lanjut dalam " . implode(', ', $kalimat_negatif) . ".";
-            }
-
-            // Fallback jika data kosong/error atau semua nilai rata-rata (jarang terjadi)
-            if (empty(trim($deskripsi_draf))) {
-                if ($nilai_akhir >= $kkm) {
-                    $deskripsi_final = 'Capaian kompetensi sudah baik pada seluruh materi.';
-                } else {
-                    $deskripsi_final = 'Perlu peningkatan pada beberapa tujuan pembelajaran.';
-                }
+            // Kalimat Kelemahan/Intervensi (Top 2 REMEDI)
+            if (!empty($bottom_tp)) {
+                $deskripsi_draf .= "Namun, perlu penguatan lebih lanjut dalam " . implode(', ', $bottom_tp) . ".";
             } else {
-                $deskripsi_final = ucfirst(trim($deskripsi_draf));
+                // Jika tidak ada TP di bawah KKM, tambahkan kalimat penguat
+                $deskripsi_draf .= "Semua tujuan pembelajaran telah tercapai dengan baik.";
             }
 
-        } elseif ($nilai_akhir !== null) {
+
+            // Finalisasi: Bersihkan lagi dan pastikan huruf kapital di awal
+            $deskripsi_final = ucfirst(trim($deskripsi_draf));
+
+        } elseif ($nilai_akhir !== null && $nilai_akhir >= $kkm) {
             $deskripsi_final = 'Capaian kompetensi secara umum sudah menunjukkan ketuntasan yang baik.';
+        } elseif ($nilai_akhir !== null && $nilai_akhir < $kkm) {
+            $deskripsi_final = 'Perlu ditingkatkan lagi pada beberapa tujuan pembelajaran untuk mencapai ketuntasan minimum.';
+        } else {
+            $deskripsi_final = 'Data penilaian belum lengkap atau belum ada penilaian sumatif yang diinput.';
         }
         
+        // Tutup statement yang disiapkan
+        if(isset($stmt_sumatif_tp) && is_object($stmt_sumatif_tp)) mysqli_stmt_close($stmt_sumatif_tp);
+        if(isset($stmt_sumatif_akhir) && is_object($stmt_sumatif_akhir)) mysqli_stmt_close($stmt_sumatif_akhir);
+
         return ['nilai_akhir' => $nilai_akhir, 'deskripsi' => $deskripsi_final];
     }
     
     // Ambil daftar penilaian
     $query = "SELECT p.*, GROUP_CONCAT(tp.deskripsi_tp SEPARATOR ', ') AS deskripsi_tp FROM penilaian p
-              LEFT JOIN penilaian_tp pt ON p.id_penilaian = pt.id_penilaian LEFT JOIN tujuan_pembelajaran tp ON pt.id_tp = tp.id_tp
-              WHERE p.id_kelas = ? AND p.id_mapel = ? AND p.id_guru = ? GROUP BY p.id_penilaian
-              ORDER BY p.jenis_penilaian, p.tanggal_penilaian DESC, p.id_penilaian DESC";
-    $stmt = mysqli_prepare($koneksi, $query);
-    mysqli_stmt_bind_param($stmt, "iii", $id_kelas, $id_mapel, $id_guru_login);
+          LEFT JOIN penilaian_tp pt ON p.id_penilaian = pt.id_penilaian LEFT JOIN tujuan_pembelajaran tp ON pt.id_tp = tp.id_tp
+          WHERE p.id_kelas = ? AND p.id_mapel = ? AND p.id_guru = ? AND p.semester = ? 
+          GROUP BY p.id_penilaian
+          ORDER BY p.jenis_penilaian, p.tanggal_penilaian DESC, p.id_penilaian DESC";
+$stmt = mysqli_prepare($koneksi, $query);
+mysqli_stmt_bind_param($stmt, "iiii", $id_kelas, $id_mapel, $id_guru_login, $semester_aktif);
     mysqli_stmt_execute($stmt);
     $result = mysqli_stmt_get_result($stmt);
     
@@ -589,7 +596,7 @@ else:
         }
     }
 
-    $query_siswa_sql = "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'";
+    $query_siswa_sql = "SELECT id_siswa, nama_lengkap, agama FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'";
     if ($agama_terdeteksi !== null) {
         $agama_filter_sql = mysqli_real_escape_string($koneksi, $agama_terdeteksi);
         $query_siswa_sql .= " AND agama = '$agama_filter_sql'";
@@ -599,7 +606,7 @@ else:
     $daftar_siswa = mysqli_fetch_all($q_siswa_kelas, MYSQLI_ASSOC);
 
     // Ambil Data Nilai Sumatif
-    $q_sumatif_kelas = mysqli_query($koneksi, "SELECT id_penilaian, nama_penilaian FROM penilaian WHERE id_kelas = $id_kelas AND id_mapel = $id_mapel AND jenis_penilaian = 'Sumatif' ORDER BY tanggal_penilaian, id_penilaian");
+    $q_sumatif_kelas = mysqli_query($koneksi, "SELECT id_penilaian, nama_penilaian FROM penilaian WHERE id_kelas = $id_kelas AND id_mapel = $id_mapel AND jenis_penilaian = 'Sumatif' AND semester = $semester_aktif ORDER BY tanggal_penilaian, id_penilaian");
     $daftar_sumatif = mysqli_fetch_all($q_sumatif_kelas, MYSQLI_ASSOC);
     
     $nilai_semua_siswa = [];

@@ -1,107 +1,160 @@
 <?php
+/**
+ * ==================================================================================
+ * FILE: pengaturan_aksi.php
+ * DESKRIPSI: Backend Engine Pusat untuk Manajemen Sistem dan Database.
+ * FUNGSI: Menangani Identitas Sekolah, Pejabat, Pengaturan Rapor, Tahun Ajaran,
+ * Upload Logo/KOP/Watermark, Backup, Restore, Migrasi, dan Sinkronisasi.
+ * ==================================================================================
+ */
+
 session_start();
 include 'koneksi.php';
 
-// Pastikan hanya admin yang bisa mengakses
+// ----------------------------------------------------------------------------------
+// [PART 1] VALIDASI KEAMANAN & KONFIGURASI SERVER
+// ----------------------------------------------------------------------------------
+
+// Pastikan hanya admin yang bisa memproses aksi sensitif ini
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-    die("Akses ditolak. Anda harus login sebagai admin.");
+    die("Akses ditolak. Anda harus login sebagai administrator untuk menjalankan skrip ini.");
 }
 
-// Mengambil aksi dari GET atau POST untuk fleksibilitas
-$aksi = $_GET['aksi'] ?? $_POST['aksi'] ?? ''; 
+// Konfigurasi performa untuk menangani file SQL berukuran besar dan migrasi berat
+ini_set('memory_limit', '1024M');     // Alokasi memori hingga 1GB
+set_time_limit(900);                  // Batas waktu eksekusi 15 menit
+ini_set('upload_max_filesize', '50M'); // Izin upload file hingga 50MB
+ini_set('post_max_size', '50M');
 
-// Fungsi helper untuk pesan JSON SweetAlert
+// Pengaturan Target Redirect
+$ui_database = 'pengaturan_backup_tampil.php';
+$ui_pengaturan = 'pengaturan_tampil.php';
+
+// ----------------------------------------------------------------------------------
+// [PART 2] FUNGSI-FUNGSI PEMBANTU (HELPER FUNCTIONS)
+// ----------------------------------------------------------------------------------
+
+/**
+ * Format Pesan JSON untuk SweetAlert
+ */
 function set_json_pesan($tipe, $judul, $teks) {
-    return json_encode(['icon' => $tipe, 'title' => $judul, 'text' => $teks]);
+    return json_encode([
+        'icon'  => $tipe,
+        'title' => $judul,
+        'html'  => $teks
+    ]);
 }
 
-// Fungsi helper untuk upload file (Logo & Watermark)
-// Mengembalikan nama file jika sukses, atau null jika gagal/tidak ada file
+/**
+ * Simpan atau Update Data ke Tabel Pengaturan secara Dinamis
+ */
+function simpanPengaturan($koneksi, $nama, $nilai) {
+    $sql = "INSERT INTO pengaturan (nama_pengaturan, nilai_pengaturan) 
+            VALUES (?, ?) 
+            ON DUPLICATE KEY UPDATE nilai_pengaturan = VALUES(nilai_pengaturan)";
+    $stmt = mysqli_prepare($koneksi, $sql);
+    mysqli_stmt_bind_param($stmt, "ss", $nama, $nilai);
+    mysqli_stmt_execute($stmt);
+}
+
+/**
+ * Handler Upload File Profesional (Logo, KOP, Watermark)
+ */
 function handleFileUpload($file_key, $upload_dir, $allowed_types, $field_name) {
-    if (isset($_FILES[$file_key]) && $_FILES[$file_key]['error'] == 0) {
+    // Cek keberadaan file di array global $_FILES
+    if (!isset($_FILES[$file_key]) || $_FILES[$file_key]['error'] == UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if ($_FILES[$file_key]['error'] == 0) {
         $file = $_FILES[$file_key];
         $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         
+        // Validasi Ekstensi
         if (!in_array($file_ext, $allowed_types)) {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Format file untuk $field_name tidak diizinkan. Harap unggah " . implode(', ', $allowed_types));
+            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Format file untuk $field_name tidak diizinkan. Gunakan: " . implode(', ', $allowed_types));
             return null;
         }
         
-        if ($file['size'] > 1048576) { // 1MB Limit
-             $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Ukuran file $field_name terlalu besar. Maksimal 1MB.");
+        // Validasi Ukuran (KOP 2MB, Lainnya 1MB)
+        $is_kop = (strpos($field_name, 'kop') !== false);
+        $limit = $is_kop ? 2097152 : 1048576; 
+        
+        if ($file['size'] > $limit) { 
+             $limit_text = $is_kop ? '2MB' : '1MB';
+             $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Ukuran file $field_name terlalu besar. Maksimal $limit_text.");
             return null;
         }
         
+        // Generate Nama File Unik
         $new_filename = $field_name . '_' . time() . '.' . $file_ext;
         $destination = $upload_dir . $new_filename;
         
         if (move_uploaded_file($file['tmp_name'], $destination)) {
             return $new_filename;
         } else {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Gagal memindahkan file $field_name.");
+            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', "Gagal memindahkan file ke direktori tujuan.");
             return null;
         }
     }
-    return null; // Tidak ada file yang diunggah
+    return null; 
 }
 
-// ==============================================
-// === FUNGSI UNTUK MENJALANKAN SKRIP MIGRASI ===
-// ==============================================
-// Ini adalah skrip yang "memperbaiki" data lama agar sesuai dengan struktur baru
+/**
+ * SKRIP MIGRASI DATA SPESIFIK (Logika Bisnis Sangat Detail)
+ */
 function jalankan_skrip_migrasi($koneksi, &$errors) {
-    // 1. Ubah KKM dari 75 (lama) menjadi 50 (baru)
+    // 1. Sinkronisasi KKM (Ubah ke standar baru 50)
     $sql1 = "UPDATE `pengaturan` SET `nilai_pengaturan` = '50' WHERE `nama_pengaturan` = 'kkm'";
-    if (!mysqli_query($koneksi, $sql1)) $errors[] = "Gagal update KKM: " . mysqli_error($koneksi);
+    if (!mysqli_query($koneksi, $sql1)) $errors[] = "Gagal sinkronisasi KKM: " . mysqli_error($koneksi);
 
-    // 2. Tambah Pengaturan Baru (Gunakan ON DUPLICATE KEY UPDATE agar aman)
+    // 2. Inisialisasi Pengaturan Rapor Default (Hanya jika belum ada)
     $sql2 = "INSERT INTO `pengaturan` (nama_pengaturan, nilai_pengaturan) VALUES 
              ('rapor_ukuran_kertas', 'F4'),
              ('rapor_skema_warna', 'light_green'),
-             ('tanggal_rapor_pts', '2025-09-10')
+             ('tanggal_rapor_pts', '2025-09-10'),
+             ('kop_sekolah', ''),
+             ('cetak_tanpa_kop', '0'),
+             ('margin_atas_tanpa_kop', '0'),
+             ('rapor_tampil_kop', '0')
              ON DUPLICATE KEY UPDATE nilai_pengaturan = VALUES(nilai_pengaturan)";
-    if (!mysqli_query($koneksi, $sql2)) $errors[] = "Gagal tambah pengaturan baru: " . mysqli_error($koneksi);
+    if (!mysqli_query($koneksi, $sql2)) $errors[] = "Gagal inisialisasi pengaturan default: " . mysqli_error($koneksi);
 
-    // 3. Ubah 'Seni Musik' (id 8 di db lama) menjadi 'Seni Rupa' (id 8 di db baru)
+    // 3. Transformasi Nama Mata Pelajaran (Seni Musik -> Seni Rupa)
     $sql3 = "UPDATE `mata_pelajaran` SET `nama_mapel` = 'Seni Rupa', `urutan` = 14 WHERE `id_mapel` = 8";
-    if (!mysqli_query($koneksi, $sql3)) $errors[] = "Gagal update Seni Rupa: " . mysqli_error($koneksi);
+    if (!mysqli_query($koneksi, $sql3)) $errors[] = "Gagal transformasi mapel Seni Rupa: " . mysqli_error($koneksi);
 
-    // 4. Update urutan mapel lain agar sesuai dengan db baru
+    // 4. Rekonstruksi Urutan Mata Pelajaran (Struktur Kurikulum Terbaru)
     $sql4 = "UPDATE `mata_pelajaran` SET `urutan` = CASE `id_mapel`
-                WHEN 1 THEN 11
-                WHEN 2 THEN 1
-                WHEN 3 THEN 6
-                WHEN 4 THEN 7
-                WHEN 5 THEN 8
-                WHEN 6 THEN 9
-                WHEN 7 THEN 10
-                WHEN 9 THEN 15
-                WHEN 10 THEN 13
-                WHEN 11 THEN 16
-                WHEN 12 THEN 12
-                WHEN 13 THEN 2
-                ELSE `urutan`
-             END
-             WHERE `id_mapel` IN (1,2,3,4,5,6,7,9,10,11,12,13)";
-    if (!mysqli_query($koneksi, $sql4)) $errors[] = "Gagal update urutan mapel: " . mysqli_error($koneksi);
+                WHEN 1 THEN 11 WHEN 2 THEN 1 WHEN 3 THEN 6 WHEN 4 THEN 7 WHEN 5 THEN 8
+                WHEN 6 THEN 9 WHEN 7 THEN 10 WHEN 9 THEN 15 WHEN 10 THEN 13 WHEN 11 THEN 16
+                WHEN 12 THEN 12 WHEN 13 THEN 2 ELSE `urutan`
+             END WHERE `id_mapel` IN (1,2,3,4,5,6,7,9,10,11,12,13)";
+    if (!mysqli_query($koneksi, $sql4)) $errors[] = "Gagal rekonstruksi urutan mapel: " . mysqli_error($koneksi);
 
-    // 5. Tambah 3 mapel agama baru (Gunakan INSERT IGNORE agar aman jika dijalankan 2x)
+    // 5. Injeksi Mata Pelajaran Agama Tambahan (Lengkap)
     $sql5 = "INSERT IGNORE INTO `mata_pelajaran` (`id_mapel`, `nama_mapel`, `kode_mapel`, `urutan`) VALUES
-             (14, 'Pendidikan Agama Hindu dan Budi Pekerti', 'PAH', 4),
+             (17, 'Pendidikan Agama Hindu dan Budi Pekerti', 'PAH', 4),
              (15, 'Pendidikan Agama Budha dan Budi Pekerti', 'PAB', 3),
              (16, 'Pendidikan Agama Katolik dan Budi Pekerti', 'PAKK', 5)";
-    if (!mysqli_query($koneksi, $sql5)) $errors[] = "Gagal tambah mapel agama baru: " . mysqli_error($koneksi);
+    if (!mysqli_query($koneksi, $sql5)) $errors[] = "Gagal injeksi mapel agama baru: " . mysqli_error($koneksi);
 }
-// ==============================================
 
+// ----------------------------------------------------------------------------------
+// [PART 3] ENGINE AKSI (SWITCH CASE)
+// ----------------------------------------------------------------------------------
+
+$aksi = $_GET['aksi'] ?? $_POST['aksi'] ?? ''; 
 
 switch ($aksi) {
-    // 1. Aksi untuk tab Identitas Sekolah
+
+    // --- AKSI 1: UPDATE IDENTITAS SEKOLAH ---
     case 'update_sekolah':
-        $stmt = mysqli_prepare($koneksi, "UPDATE sekolah SET 
-            nama_sekolah=?, jenjang=?, npsn=?, nss=?, jalan=?, desa_kelurahan=?, 
-            kecamatan=?, kabupaten_kota=?, provinsi=?, telepon=?, email=?, website=? 
-            WHERE id_sekolah = 1");
+        $sql = "UPDATE sekolah SET 
+                nama_sekolah=?, jenjang=?, npsn=?, nss=?, jalan=?, desa_kelurahan=?, 
+                kecamatan=?, kabupaten_kota=?, provinsi=?, telepon=?, email=?, website=? 
+                WHERE id_sekolah = 1";
+        $stmt = mysqli_prepare($koneksi, $sql);
         mysqli_stmt_bind_param($stmt, "ssssssssssss", 
             $_POST['nama_sekolah'], $_POST['jenjang'], $_POST['npsn'], $_POST['nss'], 
             $_POST['jalan'], $_POST['desa_kelurahan'], $_POST['kecamatan'], 
@@ -109,412 +162,314 @@ switch ($aksi) {
             $_POST['email'], $_POST['website']
         );
         if(mysqli_stmt_execute($stmt)){
-            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Data identitas sekolah telah diperbarui.');
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Identitas sekolah telah berhasil diperbarui.');
         } else {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Gagal!', 'Terjadi kesalahan saat menyimpan data sekolah: ' . mysqli_error($koneksi));
+            $_SESSION['pesan'] = set_json_pesan('error', 'Gagal!', 'Terjadi kesalahan sistem: ' . mysqli_error($koneksi));
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 2. Aksi untuk tab Pejabat
+    // --- AKSI 2: UPDATE DATA PEJABAT (KEPSEK) ---
     case 'update_pejabat':
-        $stmt = mysqli_prepare($koneksi, "UPDATE sekolah SET nama_kepsek=?, jabatan_kepsek=?, nip_kepsek=? WHERE id_sekolah = 1");
+        $sql = "UPDATE sekolah SET nama_kepsek=?, jabatan_kepsek=?, nip_kepsek=? WHERE id_sekolah = 1";
+        $stmt = mysqli_prepare($koneksi, $sql);
         mysqli_stmt_bind_param($stmt, "sss", $_POST['nama_kepsek'], $_POST['jabatan_kepsek'], $_POST['nip_kepsek']);
         if(mysqli_stmt_execute($stmt)){
-            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Data pejabat telah diperbarui.');
-        } else {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Gagal!', 'Terjadi kesalahan saat menyimpan data pejabat.');
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Data pimpinan/pejabat sekolah telah diperbarui.');
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 3. Aksi untuk tab T.A & Tanggal DAN Modifikasi Rapor
+    // --- AKSI 3: UPDATE PENGATURAN UMUM RAPOR ---
     case 'update_pengaturan':
         if (isset($_POST['pengaturan']) && is_array($_POST['pengaturan'])) {
-            $stmt = mysqli_prepare($koneksi, "INSERT INTO pengaturan (nama_pengaturan, nilai_pengaturan) VALUES (?, ?) ON DUPLICATE KEY UPDATE nilai_pengaturan = VALUES(nilai_pengaturan)");
-            
             foreach ($_POST['pengaturan'] as $nama => $nilai) {
-                mysqli_stmt_bind_param($stmt, "ss", $nama, $nilai);
-                mysqli_stmt_execute($stmt);
+                simpanPengaturan($koneksi, $nama, $nilai);
             }
-            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Pengaturan rapor telah disimpan.');
-        } else {
-            $_SESSION['pesan'] = set_json_pesan('warning', 'Tidak Ada Data', 'Tidak ada data pengaturan yang dikirim.');
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Seluruh pengaturan rapor telah disimpan.');
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 4. Aksi untuk Tambah Tahun Ajaran
+    // --- AKSI 4: TAMBAH TAHUN AJARAN BARU ---
     case 'tambah_ta':
         $tahun_ajaran = $_POST['tahun_ajaran'] ?? '';
         if (!empty($tahun_ajaran)) {
-            $stmt = mysqli_prepare($koneksi, "INSERT INTO tahun_ajaran (tahun_ajaran, status) VALUES (?, 'Tidak Aktif')");
+            $sql = "INSERT INTO tahun_ajaran (tahun_ajaran, status) VALUES (?, 'Tidak Aktif')";
+            $stmt = mysqli_prepare($koneksi, $sql);
             mysqli_stmt_bind_param($stmt, "s", $tahun_ajaran);
             if(mysqli_stmt_execute($stmt)){
-                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Tahun ajaran baru telah ditambahkan.');
-            } else {
-                 $_SESSION['pesan'] = set_json_pesan('error', 'Gagal!', 'Tahun ajaran mungkin sudah ada.');
+                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Tahun ajaran baru telah ditambahkan ke sistem.');
             }
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 5. Aksi untuk Aktifkan Tahun Ajaran
+    // --- AKSI 5: AKTIFKAN TAHUN AJARAN TERTENTU ---
     case 'aktifkan_ta':
         $id_ta = $_GET['id'] ?? 0;
         if ($id_ta > 0) {
             mysqli_query($koneksi, "UPDATE tahun_ajaran SET status = 'Tidak Aktif'");
-            $stmt = mysqli_prepare($koneksi, "UPDATE tahun_ajaran SET status = 'Aktif' WHERE id_tahun_ajaran = ?");
+            $sql = "UPDATE tahun_ajaran SET status = 'Aktif' WHERE id_tahun_ajaran = ?";
+            $stmt = mysqli_prepare($koneksi, $sql);
             mysqli_stmt_bind_param($stmt, "i", $id_ta);
             if(mysqli_stmt_execute($stmt)){
-                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Tahun ajaran telah diaktifkan.');
+                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Tahun ajaran terpilih kini telah aktif.');
             }
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 6. Aksi untuk Upload Logo
+    // --- AKSI 6: UPDATE LOGO SEKOLAH ---
     case 'update_logo':
         $upload_dir = 'uploads/';
-        $new_logo_name = handleFileUpload('logo_sekolah', $upload_dir, ['jpg', 'jpeg', 'png'], 'logo');
-        
-        if ($new_logo_name) {
-            $q_logo_lama = mysqli_query($koneksi, "SELECT logo_sekolah FROM sekolah WHERE id_sekolah = 1");
-            $d_logo_lama = mysqli_fetch_assoc($q_logo_lama);
-            if (!empty($d_logo_lama['logo_sekolah']) && file_exists($upload_dir . $d_logo_lama['logo_sekolah'])) {
-                unlink($upload_dir . $d_logo_lama['logo_sekolah']);
+        $new_logo = handleFileUpload('logo_sekolah', $upload_dir, ['jpg', 'jpeg', 'png'], 'logo');
+        if ($new_logo) {
+            $q = mysqli_query($koneksi, "SELECT logo_sekolah FROM sekolah WHERE id_sekolah = 1");
+            $d = mysqli_fetch_assoc($q);
+            if ($d && !empty($d['logo_sekolah']) && file_exists($upload_dir . $d['logo_sekolah'])) {
+                unlink($upload_dir . $d['logo_sekolah']);
             }
-            
-            $stmt = mysqli_prepare($koneksi, "UPDATE sekolah SET logo_sekolah = ? WHERE id_sekolah = 1");
-            mysqli_stmt_bind_param($stmt, "s", $new_logo_name);
+            $sql = "UPDATE sekolah SET logo_sekolah = ? WHERE id_sekolah = 1";
+            $stmt = mysqli_prepare($koneksi, $sql);
+            mysqli_stmt_bind_param($stmt, "s", $new_logo);
             mysqli_stmt_execute($stmt);
-            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Logo sekolah telah diperbarui.');
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Logo resmi sekolah telah diperbarui.');
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
 
-    // 7. Aksi untuk Upload Watermark
+    // --- AKSI 7: MANAJEMEN KOP SURAT (DENGAN KOMPATIBILITAS FILE LAMA) ---
+    case 'simpan_kop':
+    case 'update_kop_gambar': 
+        $upload_dir = 'uploads/';
+        
+        // Simpan metadata kop (Warna, Kertas, dll)
+        if (isset($_POST['pengaturan']) && is_array($_POST['pengaturan'])) {
+            foreach ($_POST['pengaturan'] as $nama => $nilai) simpanPengaturan($koneksi, $nama, $nilai);
+        }
+        
+        // Handle Toggle Fitur
+        $cetak_tanpa_kop = (isset($_POST['cetak_tanpa_kop']) && $_POST['cetak_tanpa_kop'] == '1') ? '1' : '0';
+        $margin_atas = $_POST['margin_atas_tanpa_kop'] ?? '0';
+        $rapor_tampil_kop = (isset($_POST['rapor_tampil_kop']) && $_POST['rapor_tampil_kop'] == '1') ? '1' : '0';
+
+        simpanPengaturan($koneksi, 'cetak_tanpa_kop', $cetak_tanpa_kop);
+        simpanPengaturan($koneksi, 'margin_atas_tanpa_kop', $margin_atas);
+        simpanPengaturan($koneksi, 'rapor_tampil_kop', $rapor_tampil_kop);
+
+        // Handle Upload Gambar KOP
+        $input_name = isset($_FILES['file_kop']) ? 'file_kop' : (isset($_FILES['file_kop_sekolah']) ? 'file_kop_sekolah' : 'file_kop');
+        $new_kop = handleFileUpload($input_name, $upload_dir, ['jpg', 'jpeg', 'png'], 'kop_sekolah');
+        
+        if ($new_kop) {
+            // Hapus file lama jika ada
+            $keys = ['kop_sekolah', 'file_kop_sekolah'];
+            foreach ($keys as $key) {
+                $q = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = '$key'");
+                $d = mysqli_fetch_assoc($q);
+                if ($d && !empty($d['nilai_pengaturan']) && file_exists($upload_dir . $d['nilai_pengaturan'])) {
+                    unlink($upload_dir . $d['nilai_pengaturan']);
+                }
+            }
+            // Simpan ke dua key untuk kompatibilitas
+            simpanPengaturan($koneksi, 'kop_sekolah', $new_kop);
+            simpanPengaturan($koneksi, 'file_kop_sekolah', $new_kop);
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Gambar KOP sekolah berhasil diperbarui.');
+        } else {
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Pengaturan konfigurasi KOP disimpan.');
+        }
+        header("Location: $ui_pengaturan");
+        exit();
+
+    // --- AKSI 8: MANAJEMEN WATERMARK ---
+    case 'simpan_watermark':
     case 'update_watermark':
         $upload_dir = 'uploads/';
-        $watermark_lama = $_POST['watermark_lama'] ?? null;
-        
         if (isset($_POST['hapus_watermark']) && $_POST['hapus_watermark'] == '1') {
-            if (!empty($watermark_lama) && file_exists($upload_dir . $watermark_lama)) {
-                unlink($upload_dir . $watermark_lama);
+            $q = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'watermark_file'");
+            $d = mysqli_fetch_assoc($q);
+            if ($d && !empty($d['nilai_pengaturan']) && file_exists($upload_dir . $d['nilai_pengaturan'])) {
+                unlink($upload_dir . $d['nilai_pengaturan']);
             }
-            $stmt = mysqli_prepare($koneksi, "INSERT INTO pengaturan (nama_pengaturan, nilai_pengaturan) VALUES ('watermark_file', '') ON DUPLICATE KEY UPDATE nilai_pengaturan = VALUES(nilai_pengaturan)");
-            mysqli_stmt_execute($stmt);
+            simpanPengaturan($koneksi, 'watermark_file', '');
             $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Watermark telah dihapus.');
-            
         } else {
-            $new_watermark_name = handleFileUpload('watermark_baru', $upload_dir, ['png'], 'watermark');
-            
-            if ($new_watermark_name) {
-                if (!empty($watermark_lama) && file_exists($upload_dir . $watermark_lama)) {
-                    unlink($upload_dir . $watermark_lama);
+            $input_wm = isset($_FILES['file_watermark']) ? 'file_watermark' : (isset($_FILES['watermark_baru']) ? 'watermark_baru' : 'file_watermark');
+            $new_wm = handleFileUpload($input_wm, $upload_dir, ['png'], 'watermark');
+            if ($new_wm) {
+                $q = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'watermark_file'");
+                $d = mysqli_fetch_assoc($q);
+                if ($d && !empty($d['nilai_pengaturan']) && file_exists($upload_dir . $d['nilai_pengaturan'])) {
+                    unlink($upload_dir . $d['nilai_pengaturan']);
                 }
-                
-                $stmt = mysqli_prepare($koneksi, "INSERT INTO pengaturan (nama_pengaturan, nilai_pengaturan) VALUES ('watermark_file', ?) ON DUPLICATE KEY UPDATE nilai_pengaturan = VALUES(nilai_pengaturan)");
-                mysqli_stmt_bind_param($stmt, "s", $new_watermark_name);
-                mysqli_stmt_execute($stmt);
-                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Watermark telah diperbarui.');
+                simpanPengaturan($koneksi, 'watermark_file', $new_wm);
+                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil!', 'Watermark sistem diperbarui.');
             }
         }
-        header("Location: pengaturan_tampil.php"); // Redirect kembali
+        header("Location: $ui_pengaturan");
         exit();
-        break;
-    
-    // 8. Aksi untuk membuat file backup
+
+    // --- AKSI 9: PEMBUATAN BACKUP DATABASE (PURE PHP METHOD) ---
     case 'buat_backup':
-        global $host, $user, $pass, $db; 
-        $db_host = $host ?? 'localhost'; $db_user = $user ?? 'root'; $db_pass = $pass ?? ''; $db_name = $db ?? 'raporsmp';
+        global $host, $user, $pass, $db;
+        $db_host = $host ?? 'localhost'; 
+        $db_user = $user ?? 'u1444233_admin'; 
+        $db_pass = $pass ?? 'Rashengan123456'; 
+        $db_name = $db ?? 'u1444233_rapor';
+
         try {
             $mysqli = new mysqli($db_host, $db_user, $db_pass, $db_name);
-            if ($mysqli->connect_error) { throw new Exception('Koneksi database gagal: ' . $mysqli->connect_error); }
+            if ($mysqli->connect_error) throw new Exception('Gagal melakukan koneksi database untuk proses backup.');
             $mysqli->set_charset("utf8mb4");
             
-            $backup_content = "-- Rapor Digital Backup (Pure PHP Method)\n-- Host: {$db_host}\n-- Waktu: " . date('Y-m-d H:i:s') . "\n-- Database: `{$db_name}`\n-- ------------------------------------------------------\n\n";
+            $backup_content = "-- Rapor Digital Backup System\n-- Host: {$db_host}\n-- Waktu: " . date('Y-m-d H:i:s') . "\n-- Database: `{$db_name}`\n\n";
+            $backup_content .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
             
-            $tables = []; $result = $mysqli->query("SHOW TABLES");
-            while ($row = $result->fetch_row()) { $tables[] = $row[0]; }
-            
-            foreach ($tables as $table) {
-                $result_struktur = $mysqli->query("SHOW CREATE TABLE `{$table}`"); $row_struktur = $result_struktur->fetch_row();
-                $backup_content .= "DROP TABLE IF EXISTS `{$table}`;\n"; $backup_content .= $row_struktur[1] . ";\n\n";
+            $res = $mysqli->query("SHOW TABLES");
+            while ($row = $res->fetch_row()) {
+                $table = $row[0];
+                // Struktur
+                $res_s = $mysqli->query("SHOW CREATE TABLE `{$table}`"); 
+                $row_s = $res_s->fetch_row();
+                $backup_content .= "DROP TABLE IF EXISTS `{$table}`;\n{$row_s[1]};\n\n";
                 
-                $result_data = $mysqli->query("SELECT * FROM `{$table}`"); 
-                if($result_data === false) continue; // Lewati jika tabel tidak bisa dibaca
-                
-                $num_fields = $result_data->field_count;
-                if ($result_data->num_rows > 0) {
-                    while ($row = $result_data->fetch_row()) {
-                        $backup_content .= "INSERT INTO `{$table}` VALUES(";
-                        for ($j = 0; $j < $num_fields; $j++) {
-                            if (isset($row[$j])) { 
-                                $row[$j] = $mysqli->real_escape_string($row[$j]);
-                                $backup_content .= "'{$row[$j]}'"; 
-                            } else { $backup_content .= "NULL"; }
-                            if ($j < ($num_fields - 1)) { $backup_content .= ','; }
-                        }
-                        $backup_content .= ");\n";
-                    }
-                    $backup_content .= "\n";
+                // Isi Data
+                $res_d = $mysqli->query("SELECT * FROM `{$table}`");
+                while ($row_d = $res_d->fetch_row()) {
+                    $vals = array_map(function($v) use ($mysqli) {
+                        return is_null($v) ? "NULL" : "'" . $mysqli->real_escape_string($v) . "'";
+                    }, $row_d);
+                    $backup_content .= "INSERT INTO `{$table}` VALUES (" . implode(',', $vals) . ");\n";
                 }
+                $backup_content .= "\n";
             }
+            $backup_content .= "SET FOREIGN_KEY_CHECKS=1;";
             $mysqli->close();
             
-            $backup_dir = 'backups/'; if (!is_dir($backup_dir)) { mkdir($backup_dir, 0755, true); }
-            $nama_file = 'backup_' . $db_name . '_' . date('Y-m-d_H-i-s') . '.sql';
-            if(file_put_contents($backup_dir . $nama_file, $backup_content) === false) {
-                 throw new Exception('Gagal menulis file backup. Periksa izin folder.');
+            $backup_dir = 'backups/';
+            if (!is_dir($backup_dir)) mkdir($backup_dir, 0755, true);
+            $nama_file = 'backup_' . $db_name . '_' . date('Ymd_His') . '.sql';
+            
+            if (file_put_contents($backup_dir . $nama_file, $backup_content) === false) {
+                throw new Exception("Gagal menulis file backup ke folder server.");
             }
             
-            $_SESSION['pesan'] = set_json_pesan('success', 'Backup Berhasil', 'File backup ' . $nama_file . ' berhasil dibuat.');
-        } catch (Exception $e) { 
-            $_SESSION['pesan'] = set_json_pesan('error', 'Backup Gagal', 'Terjadi kesalahan: ' . $e->getMessage()); 
+            $_SESSION['pesan'] = set_json_pesan('success', 'Backup Berhasil', "File cadangan <b>$nama_file</b> telah berhasil dibuat.");
+        } catch (Exception $e) {
+            $_SESSION['pesan'] = set_json_pesan('error', 'Backup Gagal', $e->getMessage());
         }
-        header('Location: pengaturan_backup_tampil.php');
-        exit;
-        break;
-    
-    // 9. Aksi untuk Restore Total
+        header("Location: $ui_database");
+        exit();
+
+    // --- AKSI 10: RESTORE TOTAL DATABASE (PENGGANTIAN TOTAL) ---
     case 'lakukan_restore_total':
-        global $koneksi; 
-
-        if (!isset($_FILES['sql_file_restore']) || $_FILES['sql_file_restore']['error'] != UPLOAD_ERR_OK) {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', 'Tidak ada file SQL yang diunggah atau terjadi error.');
-            header('Location: pengaturan_backup_tampil.php');
-            exit;
+        if (!isset($_FILES['sql_file_restore']) || $_FILES['sql_file_restore']['error'] != 0) {
+            $_SESSION['pesan'] = set_json_pesan('error', 'Restore Gagal', 'File SQL tidak valid atau tidak terdeteksi.');
+            header("Location: $ui_database"); exit;
         }
-
-        $file_path = $_FILES['sql_file_restore']['tmp_name'];
 
         try {
-            set_time_limit(0); // Mencegah timeout
-            mysqli_query($koneksi, "SET foreign_key_checks = 0");
-
-            // *** TAMBAHAN BARU: Matikan strict mode untuk impor ***
-            // Ini akan mentolerir data 'jenis_kelamin' yang tidak valid (spt string kosong '')
-            mysqli_query($koneksi, "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
-
-            $tables = [];
-            $result = mysqli_query($koneksi, "SHOW TABLES");
-            if (!$result) { throw new Exception("Gagal mendapatkan daftar tabel: " . mysqli_error($koneksi)); }
-            while ($row = mysqli_fetch_row($result)) {
-                $tables[] = $row[0];
+            mysqli_query($koneksi, "SET FOREIGN_KEY_CHECKS = 0");
+            
+            // Hapus semua tabel yang ada saat ini
+            $res = mysqli_query($koneksi, "SHOW TABLES");
+            while($row = mysqli_fetch_row($res)) {
+                mysqli_query($koneksi, "DROP TABLE IF EXISTS `{$row[0]}`");
             }
-
-            foreach ($tables as $table) {
-                if (!mysqli_query($koneksi, "DROP TABLE IF EXISTS `{$table}`")) {
-                    throw new Exception("Gagal menghapus tabel `{$table}`: " . mysqli_error($koneksi));
-                }
+            
+            // Eksekusi skrip SQL pemulihan
+            $sql_content = file_get_contents($_FILES['sql_file_restore']['tmp_name']);
+            if (mysqli_multi_query($koneksi, $sql_content)) {
+                do { 
+                    if ($result = mysqli_store_result($koneksi)) mysqli_free_result($result);
+                } while (mysqli_next_result($koneksi));
             }
-
-            $query_buffer = '';
-            $file_handle = fopen($file_path, 'r');
-            if (!$file_handle) { throw new Exception("Gagal membaca file SQL yang diunggah."); }
-
-            while (($line = fgets($file_handle)) !== false) {
-                $line_trimmed = trim($line);
-                
-                if (empty($line_trimmed) || substr($line_trimmed, 0, 2) == '--' || substr($line_trimmed, 0, 1) == '#') {
-                    continue;
-                }
-
-                $query_buffer .= $line;
-
-                if (substr($line_trimmed, -1, 1) == ';') {
-                    if (!mysqli_query($koneksi, $query_buffer)) {
-                         $errors[] = "Query gagal: " . mysqli_error($koneksi); // Catat error tapi lanjut
-                    }
-                    $query_buffer = ''; 
-                }
-            }
-            fclose($file_handle);
-
-            mysqli_query($koneksi, "SET foreign_key_checks = 1");
-            $_SESSION['pesan'] = set_json_pesan('success', 'Restore Total Berhasil', 'Database telah berhasil dipulihkan dari file unggahan.');
-
+            
+            mysqli_query($koneksi, "SET FOREIGN_KEY_CHECKS = 1");
+            $_SESSION['pesan'] = set_json_pesan('success', 'Restore Berhasil', 'Database sistem telah dipulihkan sepenuhnya.');
         } catch (Exception $e) {
-            mysqli_query($koneksi, "SET foreign_key_checks = 1");
-            $_SESSION['pesan'] = set_json_pesan('error', 'Restore Gagal Total', 'Terjadi kesalahan: ' . $e->getMessage());
+            mysqli_query($koneksi, "SET FOREIGN_KEY_CHECKS = 1");
+            $_SESSION['pesan'] = set_json_pesan('error', 'Restore Gagal', 'Error fatal: ' . $e->getMessage());
+        }
+        header("Location: $ui_database");
+        exit();
+
+    // --- AKSI 11: HAPUS FILE CADANGAN DI SERVER ---
+    case 'hapus_backup':
+        $file = urldecode($_GET['file'] ?? '');
+        $path = 'backups/' . basename($file);
+        if (!empty($file) && file_exists($path)) {
+            unlink($path);
+            $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil', 'File cadangan telah dihapus dari penyimpanan server.');
+        } else {
+            $_SESSION['pesan'] = set_json_pesan('error', 'Gagal', 'File tidak ditemukan atau akses ditolak.');
+        }
+        header("Location: $ui_database");
+        exit();
+
+    // --- AKSI 12: MIGRASI DATA KOMPLEKS (STRUKTUR & ISI) ---
+    case 'migrasi_via_file':
+        if (!isset($_FILES['sql_file_migrasi']) || $_FILES['sql_file_migrasi']['error'] != 0) {
+            $_SESSION['pesan'] = set_json_pesan('error', 'Migrasi Gagal', 'File migrasi tidak ditemukan.');
+            header("Location: $ui_database"); exit;
         }
         
-        header('Location: pengaturan_backup_tampil.php');
-        exit;
-        break;
-
-    // 10. Aksi untuk menghapus file backup
-    case 'hapus_backup':
-        $backup_dir = 'backups/';
-        $file_name = urldecode($_GET['file']);
-        if (basename($file_name) == $file_name) {
-            $file_path = $backup_dir . $file_name;
-            if (file_exists($file_path)) {
-                unlink($file_path);
-                $_SESSION['pesan'] = set_json_pesan('success', 'Berhasil', 'File backup telah dihapus.');
-            } else {
-                $_SESSION['pesan'] = set_json_pesan('error', 'Gagal', 'File tidak ditemukan.');
-            }
-        } else {
-             $_SESSION['pesan'] = set_json_pesan('error', 'Akses Ditolak', 'Nama file tidak valid.');
-        }
-        header('Location: pengaturan_backup_tampil.php');
-        exit;
-        break;
-
-    // =======================================================
-    // === AKSI BARU: MIGRASI DARI FILE BACKUP LAMA         ===
-    // =======================================================
-    // LOGIKA YANG DIPERBARUI: (Restore -> Alter -> Update Data)
-    // + PENANGANAN ERROR "DATA TRUNCATED"
-    // + PENANGANAN ERROR "DUPLICATE COLUMN" (SUPER FINAL)
-    case 'migrasi_via_file':
-        global $koneksi;
         $errors = [];
-
-        // Mencegah server timeout saat impor file besar
-        set_time_limit(0); 
-
-        if (!isset($_FILES['sql_file_migrasi']) || $_FILES['sql_file_migrasi']['error'] != UPLOAD_ERR_OK) {
-            $_SESSION['pesan'] = set_json_pesan('error', 'Upload Gagal', 'Tidak ada file SQL migrasi yang diunggah.');
-            header('Location: pengaturan_backup_tampil.php');
-            exit;
-        }
-
-        $file_path = $_FILES['sql_file_migrasi']['tmp_name'];
-
         try {
-            // 1. Nonaktifkan foreign key
-            mysqli_query($koneksi, "SET foreign_key_checks = 0");
+            mysqli_query($koneksi, "SET FOREIGN_KEY_CHECKS = 0");
             
-            // Matikan strict mode HANYA untuk sesi impor ini.
-            mysqli_query($koneksi, "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
-            
-            // 2. HAPUS TOTAL (DROP) semua tabel yang ada di database BARU
-            $tables = [];
-            $result = mysqli_query($koneksi, "SHOW TABLES");
-            if (!$result) throw new Exception("Gagal mendapatkan daftar tabel: " . mysqli_error($koneksi));
-            
-            while ($row = mysqli_fetch_row($result)) {
-                $tables[] = $row[0];
+            // Drop & Re-import
+            $res = mysqli_query($koneksi, "SHOW TABLES");
+            while($row = mysqli_fetch_row($res)) {
+                mysqli_query($koneksi, "DROP TABLE IF EXISTS `{$row[0]}`");
             }
             
-            foreach ($tables as $table) {
-                if (!mysqli_query($koneksi, "DROP TABLE IF EXISTS `{$table}`")) {
-                   $errors[] = "Gagal menghapus tabel `{$table}`: " . mysqli_error($koneksi);
-                }
+            $sql_content = file_get_contents($_FILES['sql_file_migrasi']['tmp_name']);
+            if (mysqli_multi_query($koneksi, $sql_content)) {
+                do { 
+                    if ($result = mysqli_store_result($koneksi)) mysqli_free_result($result);
+                } while (mysqli_next_result($koneksi));
             }
-
-            // 3. Baca file SQL lama dan jalankan SEMUA perintah (CREATE, INSERT, dll)
-            // Ini akan me-restore database ke struktur LAMA (jika file lama diupload)
-            // ATAU ke struktur BARU (jika file baru yang salah diupload)
-            $query_buffer = '';
-            $file_handle = fopen($file_path, 'r');
-            if (!$file_handle) throw new Exception("Gagal membaca file SQL yang diunggah.");
-
-            while (($line = fgets($file_handle)) !== false) {
-                $line_trimmed = trim($line);
-                
-                if (empty($line_trimmed) || substr($line_trimmed, 0, 2) == '--' || substr($line_trimmed, 0, 1) == '#') continue;
-
-                $query_buffer .= $line;
-
-                if (substr($line_trimmed, -1, 1) == ';') {
-                    if (!mysqli_query($koneksi, $query_buffer)) {
-                        $errors[] = "Query gagal (error minor): " . substr(mysqli_error($koneksi), 0, 100);
-                    }
-                    $query_buffer = ''; 
-                }
-            }
-            fclose($file_handle);
             
-            // 4. JALANKAN MIGRASI STRUKTURAL (ALTER & CREATE)
-            // Mengubah struktur LAMA -> BARU, dan TAHAN JIKA STRUKTUR BARU SUDAH ADA
-
-            // 4a. Tambahkan kolom 'id_koordinator' JIKA BELUM ADA
-            $cek_kolom_sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kokurikuler_kegiatan' AND COLUMN_NAME = 'id_koordinator'";
-            $hasil_cek = mysqli_query($koneksi, $cek_kolom_sql);
-
-            if ($hasil_cek && mysqli_num_rows($hasil_cek) == 0) {
-                // Kolom BELUM ADA (ini alur yg benar, user upload file LAMA), maka kita tambahkan
-                $sql_alter1 = "ALTER TABLE `kokurikuler_kegiatan`
-                               ADD COLUMN `id_koordinator` INT DEFAULT NULL AFTER `bentuk_kegiatan`,
-                               ADD KEY `fk_kegiatan_koordinator` (`id_koordinator`),
-                               ADD CONSTRAINT `fk_kegiatan_koordinator` FOREIGN KEY (`id_koordinator`) REFERENCES `guru` (`id_guru`) ON DELETE SET NULL ON UPDATE CASCADE";
-                if (!mysqli_query($koneksi, $sql_alter1)) {
-                    $errors[] = "Gagal alter kokurikuler_kegiatan: " . mysqli_error($koneksi);
-                }
-            }
-            // Jika $hasil_cek > 0, berarti kolom sudah ada (user salah upload file BARU), jadi kita lewati.
-
-            // 4b. Tambahkan tabel 'kokurikuler_mapel_terlibat' JIKA BELUM ADA
-            // Menggunakan CREATE TABLE IF NOT EXISTS agar aman
-            $sql_create1 = "CREATE TABLE IF NOT EXISTS `kokurikuler_mapel_terlibat` (
-                              `id_kegiatan` int NOT NULL,
-                              `id_mapel` int NOT NULL,
-                              PRIMARY KEY (`id_kegiatan`,`id_mapel`),
-                              KEY `fk_mapel_mapel` (`id_mapel`),
-                              CONSTRAINT `fk_mapel_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE,
-                              CONSTRAINT `fk_mapel_mapel` FOREIGN KEY (`id_mapel`) REFERENCES `mata_pelajaran` (`id_mapel`) ON DELETE CASCADE ON UPDATE CASCADE
-                            ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-            if (!mysqli_query($koneksi, $sql_create1)) {
-                $errors[] = "Gagal create kokurikuler_mapel_terlibat: " . mysqli_error($koneksi);
+            // Perbaikan Struktur khusus (Kokurikuler)
+            $cek_k = mysqli_query($koneksi, "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kokurikuler_kegiatan' AND COLUMN_NAME = 'id_koordinator'");
+            if (mysqli_num_rows($cek_k) == 0) {
+                $sql_alt = "ALTER TABLE `kokurikuler_kegiatan` 
+                           ADD COLUMN `id_koordinator` INT DEFAULT NULL AFTER `bentuk_kegiatan`, 
+                           ADD KEY `fk_kegiatan_koordinator` (`id_koordinator`), 
+                           ADD CONSTRAINT `fk_kegiatan_koordinator` FOREIGN KEY (`id_koordinator`) REFERENCES `guru` (`id_guru`) ON DELETE SET NULL ON UPDATE CASCADE";
+                mysqli_query($koneksi, $sql_alt);
             }
 
-            // 4c. Tambahkan tabel 'kokurikuler_tim_penilai' JIKA BELUM ADA
-            // Menggunakan CREATE TABLE IF NOT EXISTS agar aman
-            $sql_create2 = "CREATE TABLE IF NOT EXISTS `kokurikuler_tim_penilai` (
-                              `id_kegiatan` int NOT NULL,
-                              `id_guru` int NOT NULL,
-                              PRIMARY KEY (`id_kegiatan`,`id_guru`),
-                              KEY `fk_tim_guru` (`id_guru`),
-                              CONSTRAINT `fk_tim_guru` FOREIGN KEY (`id_guru`) REFERENCES `guru` (`id_guru`) ON DELETE CASCADE ON UPDATE CASCADE,
-                              CONSTRAINT `fk_tim_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE
-                            ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-            if (!mysqli_query($koneksi, $sql_create2)) {
-                $errors[] = "Gagal create kokurikuler_tim_penilai: " . mysqli_error($koneksi);
-            }
+            // Pembuatan tabel relasi kokurikuler jika belum ada
+            mysqli_query($koneksi, "CREATE TABLE IF NOT EXISTS `kokurikuler_mapel_terlibat` ( `id_kegiatan` int NOT NULL, `id_mapel` int NOT NULL, PRIMARY KEY (`id_kegiatan`,`id_mapel`), KEY `fk_mapel_mapel` (`id_mapel`), CONSTRAINT `fk_mapel_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT `fk_mapel_mapel` FOREIGN KEY (`id_mapel`) REFERENCES `mata_pelajaran` (`id_mapel`) ON DELETE CASCADE ON UPDATE CASCADE ) ENGINE=InnoDB DEFAULT CHARSET=latin1;");
+            
+            mysqli_query($koneksi, "CREATE TABLE IF NOT EXISTS `kokurikuler_tim_penilai` ( `id_kegiatan` int NOT NULL, `id_guru` int NOT NULL, PRIMARY KEY (`id_kegiatan`,`id_guru`), KEY `fk_tim_guru` (`id_guru`), CONSTRAINT `fk_tim_guru` FOREIGN KEY (`id_guru`) REFERENCES `guru` (`id_guru`) ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT `fk_tim_kegiatan` FOREIGN KEY (`id_kegiatan`) REFERENCES `kokurikuler_kegiatan` (`id_kegiatan`) ON DELETE CASCADE ON UPDATE CASCADE ) ENGINE=InnoDB DEFAULT CHARSET=latin1;");
 
-            // 5. JALANKAN MIGRASI DATA
-            // Menjalankan skrip perbaikan data (KKM, Mapel, dll)
+            // Jalankan seluruh skrip migrasi bisnis
             jalankan_skrip_migrasi($koneksi, $errors);
-
-            // 6. Pembersihan Data (Tambahan)
-            // Memastikan data jenis_kelamin yang '' (string kosong) menjadi NULL
+            
+            // Pembersihan data akhir
             mysqli_query($koneksi, "UPDATE `siswa` SET `jenis_kelamin` = NULL WHERE `jenis_kelamin` = ''");
-
-            // 7. Aktifkan kembali foreign key
             mysqli_query($koneksi, "SET foreign_key_checks = 1");
 
-            // 8. Beri laporan
             if (empty($errors)) {
-                $_SESSION['pesan'] = set_json_pesan('success', 'Migrasi Berhasil!', 'Data lama Anda telah berhasil diimpor dan diperbarui ke struktur baru.');
+                $_SESSION['pesan'] = set_json_pesan('success', 'Migrasi Berhasil!', 'Database telah diimpor dan disesuaikan dengan struktur aplikasi terbaru.');
             } else {
-                 $error_string = implode('; ', array_slice($errors, 0, 3)); // Ambil 3 error pertama
-                 $_SESSION['pesan'] = set_json_pesan('warning', 'Migrasi Selesai (dengan error)', 'Data diimpor, tapi terjadi beberapa error: ' . $error_string . '...');
+                $_SESSION['pesan'] = set_json_pesan('warning', 'Migrasi Selesai (dengan catatan)', 'Proses selesai, namun terdapat beberapa peringatan minor: ' . implode('; ', array_slice($errors, 0, 2)) . '...');
             }
-
+            
         } catch (Exception $e) {
-            mysqli_query($koneksi, "SET foreign_key_checks = 1"); // Pastikan FK aktif kembali jika ada error
-            $_SESSION['pesan'] = set_json_pesan('error', 'Migrasi Gagal Total', 'Terjadi kesalahan: ' . $e->getMessage());
+            mysqli_query($koneksi, "SET foreign_key_checks = 1");
+            $_SESSION['pesan'] = set_json_pesan('error', 'Migrasi Gagal Total', $e->getMessage());
         }
-
-        header('Location: pengaturan_backup_tampil.php');
-        exit;
-        break;
-
-    // Aksi default jika tidak ada yang cocok
-    default:
-        // Tidak melakukan apa-apa, redirect ke halaman utama pengaturan
-        header("Location: pengaturan_tampil.php");
+        header("Location: $ui_database");
         exit();
-        break;
+
+    // --- AKSI DEFAULT: PROTEKSI REDIRECT ---
+    default:
+        header("Location: $ui_pengaturan");
+        exit();
 }
 ?>

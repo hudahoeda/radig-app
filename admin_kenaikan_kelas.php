@@ -3,8 +3,17 @@ include 'header.php';
 include 'koneksi.php';
 
 // Validasi role admin
-if ($_SESSION['role'] != 'admin') {
-    echo "<script>Swal.fire('Akses Ditolak','Hanya Admin yang dapat mengakses halaman ini.','error').then(() => window.location = 'dashboard.php');</script>";
+if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
+    echo "<script>
+        Swal.fire({
+            icon: 'error',
+            title: 'Akses Ditolak',
+            text: 'Hanya Admin yang dapat mengakses halaman ini.',
+            confirmButtonColor: '#d33'
+        }).then(() => {
+            window.location = 'dashboard.php';
+        });
+    </script>";
     include 'footer.php';
     exit;
 }
@@ -13,7 +22,10 @@ if ($_SESSION['role'] != 'admin') {
 $q_ta_aktif = mysqli_query($koneksi, "SELECT id_tahun_ajaran, tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
 $ta_aktif = mysqli_fetch_assoc($q_ta_aktif);
 if (!$ta_aktif) {
-    echo "<div class='container-fluid'><div class='alert alert-danger'>Error: Tidak ada Tahun Ajaran yang berstatus 'Aktif'. Silakan atur di halaman Pengaturan.</div></div>";
+    echo "<div class='container-fluid mt-4'><div class='alert alert-danger shadow-sm border-0'>
+            <h4 class='alert-heading'><i class='bi bi-exclamation-octagon-fill me-2'></i>Sistem Belum Siap</h4>
+            <p>Tidak ada Tahun Ajaran yang berstatus 'Aktif'. Silakan atur di halaman Pengaturan terlebih dahulu.</p>
+          </div></div>";
     include 'footer.php'; exit;
 }
 // Cari T.A berikutnya (yang statusnya tidak aktif dan tahunnya > tahun aktif)
@@ -62,55 +74,84 @@ if (!empty($nama_kelas_pilihan) && !empty($tingkat_akhir_patterns)) {
 ?>
 
 <style>
-    .page-header { background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2.5rem 2rem; border-radius: 0.75rem; color: white; }
-    .page-header h1 { font-weight: 700; }
+    .page-header { background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2.5rem 2rem; border-radius: 0.75rem; color: white; margin-bottom: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+    .page-header h1 { font-weight: 800; letter-spacing: -0.5px; }
     .table th, .table td { vertical-align: middle; }
     /* Tambahkan style untuk table-responsive jika tabel siswa panjang */
-    .table-siswa-container { max-height: 50vh; overflow-y: auto; }
-    .footer-actions { background-color: #f8f9fa; border-top: 1px solid #dee2e6; padding: 1rem 1.5rem; }
+    .table-siswa-container { max-height: 50vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.5rem; }
+    .footer-actions { background-color: white; border-top: 1px solid #edf2f7; padding: 1.5rem; border-radius: 0 0 1rem 1rem; }
+    .card { border: none; border-radius: 1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }
+    .card-header { background-color: #fff; padding: 1.5rem; border-bottom: 1px solid #edf2f7; border-radius: 1rem 1rem 0 0 !important; }
+    
+    .step-badge {
+        background-color: var(--primary-color); color: white;
+        width: 30px; height: 30px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-weight: bold; margin-right: 10px;
+    }
 </style>
 
 <div class="container-fluid">
-    <div class="page-header text-white mb-4 shadow">
-        <h1 class="mb-1">Proses Kenaikan Kelas & Kelulusan</h1>
-        <p class="lead mb-0 opacity-75">
-            Tahun Ajaran Asal: <strong><?php echo htmlspecialchars($ta_aktif['tahun_ajaran']); ?></strong>
+    <div class="page-header text-white">
+        <h1 class="mb-1">Proses Kenaikan Kelas</h1>
+        <p class="lead mb-0 opacity-90">
+            <span class="badge bg-white text-primary me-2"><?php echo htmlspecialchars($ta_aktif['tahun_ajaran']); ?></span>
+            <i class="bi bi-arrow-right mx-2"></i>
             <?php if ($ta_berikutnya): ?>
-                 | Tujuan ke: <strong><?php echo htmlspecialchars($ta_berikutnya['tahun_ajaran']); ?></strong>
+                <span class="badge bg-success bg-opacity-75 text-white"><?php echo htmlspecialchars($ta_berikutnya['tahun_ajaran']); ?></span>
+            <?php else: ?>
+                <span class="badge bg-danger">?</span>
             <?php endif; ?>
         </p>
     </div>
 
     <!-- Peringatan jika T.A berikutnya atau kelasnya belum siap -->
     <?php if (!$ta_berikutnya || !$kelas_baru_result || mysqli_num_rows($kelas_baru_result) == 0): ?>
-        <div class="alert alert-danger shadow-sm">
-            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Aksi Diperlukan!</h4>
-            <p>Sistem tidak menemukan data Tahun Ajaran berikutnya yang valid atau belum ada data Kelas yang dibuat untuk Tahun Ajaran tersebut.</p>
-            <hr>
-            <p class="mb-0">Silakan lakukan langkah berikut di halaman <a href="pengaturan_tampil.php" class="alert-link">Pengaturan</a>:</p>
-            <ol>
-                <li>Tambahkan Tahun Ajaran baru (misal: <?php echo substr($ta_aktif['tahun_ajaran'], 0, 5) . (intval(substr($ta_aktif['tahun_ajaran'], 5, 4)) + 1); ?>/<?php echo (intval(substr($ta_aktif['tahun_ajaran'], 0, 4)) + 2); ?>).</li>
-                <li>Buat data kelas-kelas baru untuk Tahun Ajaran yang baru ditambahkan tersebut di halaman <a href="kelas_tampil.php" class="alert-link">Kelas & Siswa</a>.</li>
-            </ol>
+        <div class="alert alert-warning shadow-sm border-0 rounded-3 p-4">
+            <div class="d-flex">
+                <div class="me-3">
+                    <i class="bi bi-exclamation-triangle-fill fs-1 text-warning"></i>
+                </div>
+                <div>
+                    <h4 class="alert-heading fw-bold">Konfigurasi Belum Lengkap</h4>
+                    <p>Sistem tidak menemukan data Tahun Ajaran berikutnya atau Kelas untuk tahun tersebut belum dibuat.</p>
+                    <hr>
+                    <p class="mb-2 fw-bold">Solusi:</p>
+                    <ol class="mb-0">
+                        <li>Tambahkan Tahun Ajaran baru (misal: <?php echo substr($ta_aktif['tahun_ajaran'], 0, 5) . (intval(substr($ta_aktif['tahun_ajaran'], 5, 4)) + 1); ?>/<?php echo (intval(substr($ta_aktif['tahun_ajaran'], 0, 4)) + 2); ?>) di menu <b>Pengaturan</b>.</li>
+                        <li>Buat data kelas-kelas baru untuk Tahun Ajaran tersebut di menu <b>Kelas & Siswa</b>.</li>
+                    </ol>
+                    <div class="mt-3">
+                        <a href="pengaturan_tampil.php" class="btn btn-warning text-dark fw-bold"><i class="bi bi-gear-fill me-2"></i>Ke Pengaturan</a>
+                        <a href="kelas_tampil.php" class="btn btn-outline-dark ms-2"><i class="bi bi-door-open-fill me-2"></i>Ke Manajemen Kelas</a>
+                    </div>
+                </div>
+            </div>
         </div>
     <?php else: ?>
         <!-- Form Pemilihan Kelas Asal -->
-        <div class="card shadow-sm">
-            <div class="card-header bg-light">
-                <h5 class="mb-0"><i class="bi bi-door-open-fill me-2" style="color: var(--primary-color);"></i>Langkah 1: Pilih Kelas Asal (T.A <?php echo htmlspecialchars($ta_aktif['tahun_ajaran']); ?>)</h5>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h5 class="mb-0 d-flex align-items-center text-dark fw-bold">
+                    <span class="step-badge">1</span> Pilih Kelas Asal (T.A <?php echo htmlspecialchars($ta_aktif['tahun_ajaran']); ?>)
+                </h5>
             </div>
-            <div class="card-body">
+            <div class="card-body p-4">
                 <form method="GET" action="" id="formPilihKelas">
-                    <div class="input-group">
-                        <select name="id_kelas" class="form-select form-select-lg" onchange="document.getElementById('formPilihKelas').submit()">
-                            <option value="">-- Pilih Kelas untuk Menampilkan Siswa --</option>
-                            <?php mysqli_data_seek($kelas_aktif_result, 0); while($kls = mysqli_fetch_assoc($kelas_aktif_result)): ?>
-                                <option value="<?php echo $kls['id_kelas']; ?>" <?php if($id_kelas_pilihan == $kls['id_kelas']) echo 'selected'; ?>>
-                                    <?php echo htmlspecialchars($kls['nama_kelas']); ?>
-                                </option>
-                            <?php endwhile; ?>
-                        </select>
-                        <button class="btn btn-primary px-4" type="submit"><i class="bi bi-search me-2"></i>Tampilkan</button>
+                    <div class="row align-items-center">
+                        <div class="col-md-9">
+                            <select name="id_kelas" class="form-select form-select-lg bg-light" onchange="document.getElementById('formPilihKelas').submit()">
+                                <option value="">-- Pilih Kelas untuk Menampilkan Siswa --</option>
+                                <?php mysqli_data_seek($kelas_aktif_result, 0); while($kls = mysqli_fetch_assoc($kelas_aktif_result)): ?>
+                                    <option value="<?php echo $kls['id_kelas']; ?>" <?php if($id_kelas_pilihan == $kls['id_kelas']) echo 'selected'; ?>>
+                                        <?php echo htmlspecialchars($kls['nama_kelas']); ?>
+                                    </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mt-3 mt-md-0 d-grid">
+                            <button class="btn btn-primary btn-lg" type="submit"><i class="bi bi-search me-2"></i>Tampilkan</button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -118,33 +159,42 @@ if (!empty($nama_kelas_pilihan) && !empty($tingkat_akhir_patterns)) {
 
         <!-- Tabel Siswa dan Form Aksi (Hanya tampil jika kelas sudah dipilih) -->
         <?php if ($id_kelas_pilihan > 0): ?>
-        <form action="admin_aksi.php?aksi=proses_kenaikan_siswa" method="POST" onsubmit="return konfirmasiProses();">
+        <!-- PERUBAHAN: Hapus onsubmit, tambahkan ID form, ubah action button type -->
+        <form action="admin_aksi.php?aksi=proses_kenaikan_siswa" method="POST" id="formProsesKenaikan">
             <input type="hidden" name="id_kelas_lama" value="<?php echo $id_kelas_pilihan; ?>">
 
-            <div class="card shadow-sm mt-4">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
-                     <h5 class="mb-0 py-1"><i class="bi bi-people-fill me-2 text-success"></i>Langkah 2: Pilih Siswa dari Kelas <?php echo htmlspecialchars($nama_kelas_pilihan); ?></h5>
-                    <?php if(!empty($siswa_di_kelas)): // Tampilkan tombol hanya jika ada siswa ?>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-1" id="pilihSemua"><i class="bi bi-check2-square me-1"></i> Pilih / Lepas Semua</button>
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                     <h5 class="mb-0 text-dark fw-bold d-flex align-items-center">
+                        <span class="step-badge">2</span> Pilih Siswa dari <?php echo htmlspecialchars($nama_kelas_pilihan); ?>
+                     </h5>
+                    <?php if(!empty($siswa_di_kelas)): ?>
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3" id="pilihSemua">
+                        <i class="bi bi-check2-all me-1"></i> Pilih Semua
+                    </button>
                     <?php endif; ?>
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-siswa-container"> 
+                    <div class="table-siswa-container m-3"> 
                         <table class="table table-hover mb-0">
                             <thead class="table-light sticky-top"> 
                                 <tr>
-                                    <th class="text-center" width="5%"><i class="bi bi-check2-square"></i></th>
+                                    <th class="text-center" width="60px"><i class="bi bi-check-lg"></i></th>
                                     <th>Nama Siswa</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if(empty($siswa_di_kelas)): ?>
-                                    <tr><td colspan="2" class="text-center text-muted py-5">Tidak ada siswa aktif di kelas ini.</td></tr>
+                                    <tr><td colspan="2" class="text-center text-muted py-5"><i class="bi bi-person-x fs-1 opacity-50 d-block mb-2"></i>Tidak ada siswa aktif di kelas ini.</td></tr>
                                 <?php else: ?>
                                     <?php foreach($siswa_di_kelas as $siswa): ?>
                                     <tr>
-                                        <td class="text-center"><input class="form-check-input siswa-checkbox" type="checkbox" name="id_siswa[]" value="<?php echo $siswa['id_siswa']; ?>"></td>
-                                        <td><?php echo htmlspecialchars($siswa['nama_lengkap']); ?></td>
+                                        <td class="text-center">
+                                            <div class="form-check d-flex justify-content-center">
+                                                <input class="form-check-input siswa-checkbox" type="checkbox" name="id_siswa[]" value="<?php echo $siswa['id_siswa']; ?>" style="transform: scale(1.3);">
+                                            </div>
+                                        </td>
+                                        <td class="fw-medium text-dark"><?php echo htmlspecialchars($siswa['nama_lengkap']); ?></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -155,34 +205,37 @@ if (!empty($nama_kelas_pilihan) && !empty($tingkat_akhir_patterns)) {
 
                 <!-- Footer Aksi (Hanya Tampil Jika Ada Siswa) -->
                 <?php if(!empty($siswa_di_kelas)): ?>
-                <div class="card-footer footer-actions">
-                     <h5 class="mb-3"><i class="bi bi-arrow-right-circle-fill me-2 text-primary"></i>Langkah 3: Tentukan Tindakan & Kelas Tujuan</h5>
+                <div class="footer-actions bg-light">
+                    <h5 class="mb-3 text-dark fw-bold d-flex align-items-center">
+                        <span class="step-badge">3</span> Konfirmasi Tindakan
+                    </h5>
                     <div class="row align-items-end g-3">
                         <div class="col-md-5 col-lg-4">
-                            <label for="select-tindakan" class="form-label fw-bold">Tindakan untuk Siswa Terpilih:</label>
-                             <select name="tindakan" class="form-select form-select-lg" id="select-tindakan" required>
+                            <label for="select-tindakan" class="form-label text-muted fw-bold small text-uppercase">Tindakan</label>
+                             <select name="tindakan" class="form-select form-select-lg shadow-sm border-primary" id="select-tindakan" required>
                                 <option value="" disabled selected>-- Pilih Tindakan --</option>
                                 <?php if ($is_kelas_akhir): ?>
-                                    <option value="luluskan">✅ Luluskan Siswa</option>
-                                    <option value="tinggal">❌ Tinggal di Kelas Ini (Pilih Kelas Tujuan T.A Baru)</option> {/* Tinggal di level yang sama */}
+                                    <option value="luluskan">🎓 Luluskan Siswa</option>
+                                    <option value="tinggal">🔁 Tinggal Kelas (Di Tingkat Ini)</option>
                                 <?php else: ?>
-                                    <option value="naik">⬆️ Naikkan ke Kelas Berikutnya (Pilih Kelas Tujuan T.A Baru)</option>
-                                    <option value="tinggal">❌ Tinggal di Kelas Ini (Pilih Kelas Tujuan T.A Baru)</option> {/* Tinggal di level yang sama */}
+                                    <option value="naik">📈 Naik ke Kelas Berikutnya</option>
+                                    <option value="tinggal">🔁 Tinggal Kelas (Di Tingkat Ini)</option>
                                 <?php endif; ?>
                             </select>
                         </div>
                          <div class="col-md-5 col-lg-6">
-                            <label for="select-tujuan" class="form-label fw-bold">Kelas Tujuan (T.A <?php echo htmlspecialchars($ta_berikutnya['tahun_ajaran']); ?>):</label>
-                            <select name="id_kelas_baru" class="form-select form-select-lg" id="select-tujuan" disabled>
+                            <label for="select-tujuan" class="form-label text-muted fw-bold small text-uppercase">Kelas Tujuan (T.A <?php echo htmlspecialchars($ta_berikutnya['tahun_ajaran']); ?>)</label>
+                            <select name="id_kelas_baru" class="form-select form-select-lg shadow-sm" id="select-tujuan" disabled>
                                 <option value="">-- Pilih Kelas Tujuan --</option>
                                 <?php mysqli_data_seek($kelas_baru_result, 0); while($kb = mysqli_fetch_assoc($kelas_baru_result)): ?>
                                     <option value="<?php echo $kb['id_kelas']; ?>"><?php echo htmlspecialchars($kb['nama_kelas']); ?></option>
                                 <?php endwhile; ?>
                             </select>
-                            <div class="form-text" id="help-tujuan" style="display: none;">Pilih kelas di tahun ajaran baru. Jika 'Tinggal Kelas', pilih kelas dengan tingkat yang sama.</div>
+                            <div class="form-text text-primary" id="help-tujuan" style="display: none;"><i class="bi bi-info-circle me-1"></i>Pilih kelas tujuan untuk Tahun Ajaran baru.</div>
                         </div>
                         <div class="col-md-2 col-lg-2 d-grid">
-                            <button type="submit" class="btn btn-success btn-lg"><i class="bi bi-check-circle-fill me-2"></i> Proses</button>
+                            <!-- Button type changed to button to trigger JS -->
+                            <button type="button" onclick="konfirmasiProses()" class="btn btn-success btn-lg shadow fw-bold"><i class="bi bi-check-lg me-2"></i>Proses</button>
                         </div>
                     </div>
                 </div>
@@ -208,6 +261,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const allChecked = Array.from(checkboxes).every(cb => cb.checked);
             // Lakukan aksi kebalikan
             checkboxes.forEach(cb => cb.checked = !allChecked);
+            
+            // Ubah teks tombol
+            if(!allChecked) {
+                 this.innerHTML = '<i class="bi bi-x-lg me-1"></i> Batal Pilih';
+                 this.classList.replace('btn-outline-primary', 'btn-outline-danger');
+            } else {
+                 this.innerHTML = '<i class="bi bi-check2-all me-1"></i> Pilih Semua';
+                 this.classList.replace('btn-outline-danger', 'btn-outline-primary');
+            }
         });
     }
 
@@ -219,60 +281,146 @@ document.addEventListener('DOMContentLoaded', function() {
             if (tindakan === 'naik' || tindakan === 'tinggal') {
                 selectTujuan.disabled = false;
                 selectTujuan.required = true;
-                helpTujuan.style.display = 'block'; // Tampilkan helper text
+                selectTujuan.classList.add('border-primary');
+                helpTujuan.style.display = 'block'; 
             } else {
                 selectTujuan.disabled = true;
                 selectTujuan.required = false;
                 selectTujuan.value = ''; // Reset pilihan
-                 helpTujuan.style.display = 'none'; // Sembunyikan helper text
+                selectTujuan.classList.remove('border-primary');
+                helpTujuan.style.display = 'none'; 
             }
         });
          // Panggil sekali saat load untuk inisialisasi state
-         selectTindakan.dispatchEvent(new Event('change'));
+         if(selectTindakan.value) selectTindakan.dispatchEvent(new Event('change'));
     }
 });
 
-// Fungsi Konfirmasi Sebelum Submit
+// Fungsi Konfirmasi dengan SweetAlert2
 function konfirmasiProses() {
+    const form = document.getElementById('formProsesKenaikan');
     const checkboxes = document.querySelectorAll('.siswa-checkbox:checked');
     const selectTindakan = document.getElementById('select-tindakan');
     const selectTujuan = document.getElementById('select-tujuan');
     const tindakan = selectTindakan.value;
 
+    // Validasi input
     if (checkboxes.length === 0) {
-        Swal.fire('Peringatan', 'Silakan pilih minimal satu siswa untuk diproses.', 'warning');
-        return false; // Mencegah submit
+        Swal.fire({
+            icon: 'warning',
+            title: 'Belum ada siswa',
+            text: 'Silakan pilih minimal satu siswa dari daftar.',
+            confirmButtonColor: '#f39c12'
+        });
+        return;
     }
     if (tindakan === '') {
-         Swal.fire('Peringatan', 'Silakan pilih tindakan yang akan dilakukan.', 'warning');
-         return false;
+         Swal.fire({
+            icon: 'warning',
+            title: 'Tindakan Kosong',
+            text: 'Silakan pilih tindakan yang akan dilakukan.',
+            confirmButtonColor: '#f39c12'
+        });
+         return;
     }
      if ((tindakan === 'naik' || tindakan === 'tinggal') && selectTujuan.value === '') {
-         Swal.fire('Peringatan', 'Silakan pilih kelas tujuan untuk tindakan ini.', 'warning');
-         return false;
+         Swal.fire({
+            icon: 'warning',
+            title: 'Kelas Tujuan Kosong',
+            text: 'Silakan pilih kelas tujuan untuk tahun ajaran baru.',
+            confirmButtonColor: '#f39c12'
+        });
+         return;
     }
 
-    // Konfirmasi akhir
-    let pesanKonfirmasi = `Anda yakin ingin memproses ${checkboxes.length} siswa yang dipilih dengan tindakan "${selectTindakan.options[selectTindakan.selectedIndex].text}"?`;
-    if (tindakan === 'naik' || tindakan === 'tinggal') {
-        pesanKonfirmasi += ` ke kelas "${selectTujuan.options[selectTujuan.selectedIndex].text}"`;
-    }
-     pesanKonfirmasi += "\nAksi ini akan mengubah data siswa dan TIDAK DAPAT DIURUNGKAN.";
+    // Bangun Pesan Konfirmasi HTML
+    let actionText = selectTindakan.options[selectTindakan.selectedIndex].text;
+    let targetClassText = (tindakan === 'naik' || tindakan === 'tinggal') ? selectTujuan.options[selectTujuan.selectedIndex].text : '-';
+    
+    let htmlContent = `
+        <div class="text-start bg-light p-3 rounded border">
+            <div class="mb-2">Anda akan memproses: <b>${checkboxes.length} Siswa</b></div>
+            <div class="mb-2">Tindakan: <b>${actionText}</b></div>
+            ${(tindakan !== 'luluskan') ? `<div class="mb-2">Kelas Tujuan: <b>${targetClassText}</b></div>` : ''}
+        </div>
+        <div class="mt-3 text-danger small fst-italic">
+            <i class="bi bi-exclamation-circle me-1"></i> Data siswa akan dipindahkan ke Tahun Ajaran Baru. Pastikan data sudah benar.
+        </div>
+    `;
 
-    return confirm(pesanKonfirmasi); // Menggunakan confirm() bawaan browser
+    Swal.fire({
+        title: 'Konfirmasi Proses',
+        html: htmlContent,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#198754',
+        cancelButtonColor: '#d33',
+        confirmButtonText: '<i class="bi bi-check-lg me-1"></i> Ya, Proses Sekarang!',
+        cancelButtonText: 'Batal',
+        focusCancel: true
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Sedang Memproses...',
+                text: 'Mohon tunggu sebentar.',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+            form.submit();
+        }
+    });
 }
 </script>
 
 <?php
-// Tampilkan pesan sukses/error dari session jika ada
+// Tampilkan pesan sukses/error dari session jika ada (Format Modern)
 if (isset($_SESSION['pesan'])) {
-    // Gunakan addslashes untuk menangani kutip dalam pesan JSON
+    $pesan = $_SESSION['pesan'];
+    $data_json = json_decode($pesan, true);
+
+    if (json_last_error() == JSON_ERROR_NONE && is_array($data_json)) {
+        // Jika JSON valid
+        echo "<script>
+            document.addEventListener('DOMContentLoaded', function() {
+                Swal.fire({
+                    icon: '" . addslashes($data_json['icon']) . "',
+                    title: '" . addslashes($data_json['title']) . "',
+                    html: '" . addslashes($data_json['html']) . "',
+                    timer: 3000,
+                    timerProgressBar: true,
+                    showConfirmButton: false
+                });
+            });
+        </script>";
+    } else {
+        // Jika Plain Text
+        echo "<script>
+            document.addEventListener('DOMContentLoaded', function() {
+                Swal.fire({
+                    icon: 'success', 
+                    title: 'Berhasil!', 
+                    html: '" . addslashes($pesan) . "',
+                    timer: 2000,
+                    timerProgressBar: true
+                });
+            });
+        </script>";
+    }
+    unset($_SESSION['pesan']); // Hapus pesan setelah ditampilkan
+} elseif (isset($_SESSION['error'])) { 
+    // Handle session error
+    $error_pesan = $_SESSION['error'];
     echo "<script>
         document.addEventListener('DOMContentLoaded', function() {
-            Swal.fire(" . $_SESSION['pesan'] . ");
+            Swal.fire({
+                icon: 'error', 
+                title: 'Gagal!', 
+                html: '" . addslashes($error_pesan) . "'
+            });
         });
     </script>";
-    unset($_SESSION['pesan']); // Hapus pesan setelah ditampilkan
+    unset($_SESSION['error']);
 }
+
 include 'footer.php';
 ?>

@@ -10,39 +10,162 @@ if (isset($koneksi)) { // Check if $koneksi is available
     }
 }
 ?>
-        <footer class="app-footer">
-            <div class="d-flex justify-content-between align-items-center flex-column flex-sm-row">
-                <span class="text-muted text-center text-sm-start mb-2 mb-sm-0">
-                    &copy; <?php echo date("Y"); ?> Aplikasi Rapor Digital - <?php echo htmlspecialchars($nama_sekolah_footer); ?>
-                    <!-- [BARU] Menampilkan Versi Aplikasi dari koneksi.php -->
-                    <?php if(isset($APP_VERSION)) echo '<span class="badge bg-secondary ms-1">' . htmlspecialchars($APP_VERSION) . '</span>'; ?>
-                </span>
-                <div class="text-center text-sm-end">
-                    <a href="https://multischool.sch.id/index.php" class="ms-sm-3" target="_blank">Web Sekolah</a>
-                    <a href="https://multischool.sch.id" class="ms-3" target="_blank">Portal Digital</a>
-                </div>
+    <!-- FOOTER MODERN -->
+    <style>
+        .app-footer {
+            background: #ffffff;
+            border-top: 1px solid rgba(0,0,0,0.06);
+            padding: 1.5rem 2.5rem;
+            margin-top: auto; /* Push footer to bottom */
+            position: relative;
+            z-index: 10;
+        }
+
+        .footer-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .copyright-section {
+            display: flex;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #64748b; /* Slate-500 */
+            font-weight: 500;
+        }
+
+        .school-name {
+            color: #334155; /* Slate-700 */
+            font-weight: 600;
+        }
+
+        .version-badge {
+            background: rgba(38, 166, 154, 0.1); /* Teal transparent */
+            color: var(--primary-color);
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: 12px;
+            border: 1px solid rgba(38, 166, 154, 0.2);
+            letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+        }
+        
+        .version-badge::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .footer-link-item {
+            color: #64748b;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .footer-link-item i {
+            margin-right: 8px;
+            font-size: 1.1rem;
+            transition: transform 0.3s ease;
+        }
+
+        .footer-link-item:hover {
+            color: var(--primary-color);
+        }
+
+        .footer-link-item:hover i {
+            transform: translateY(-2px);
+        }
+        
+        /* Garis bawah animasi saat hover */
+        .footer-link-item::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: -4px;
+            left: 0;
+            background-color: var(--primary-color);
+            transition: width 0.3s ease;
+            border-radius: 2px;
+        }
+        
+        .footer-link-item:hover::after {
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            .app-footer { padding: 1.5rem; }
+            .footer-container { flex-direction: column; text-align: center; gap: 1.5rem; }
+            .copyright-section { flex-direction: column; gap: 0.5rem; }
+            .version-badge { margin-left: 0; margin-top: 5px; }
+            .footer-links { gap: 1.5rem; }
+        }
+    </style>
+
+    <footer class="app-footer">
+        <div class="footer-container">
+            <!-- Bagian Kiri: Copyright & Info Sekolah -->
+            <div class="copyright-section">
+                <span>&copy; <?php echo date("Y"); ?> Rapor Digital</span>
+                <span class="d-none d-md-inline mx-2 text-muted">•</span>
+                <span class="school-name"><?php echo htmlspecialchars($nama_sekolah_footer); ?></span>
+                
+                <!-- Badge Versi -->
+                <?php if(isset($APP_VERSION)): ?>
+                    <span class="version-badge" title="Versi Aplikasi"><?php echo htmlspecialchars($APP_VERSION); ?></span>
+                <?php endif; ?>
             </div>
-        </footer>
 
-    </div>
-</div>
+            <!-- Bagian Kanan: Link Eksternal -->
+            <div class="footer-links">
+                <a href="https://multischool.sch.id/index.php" class="footer-link-item" target="_blank">
+                    <i class="bi bi-globe2"></i> Web Sekolah
+                </a>
+                <a href="https://multischool.sch.id" class="footer-link-item" target="_blank">
+                    <i class="bi bi-cloud-check-fill"></i> Portal Digital
+                </a>
+            </div>
+        </div>
+    </footer>
 
+    </div> <!-- End Content Div -->
+</div> <!-- End Wrapper Div -->
+
+<!-- SCRIPT PENDUKUNG -->
 <script>
 $(document).ready(function () {
-    // --- PERBAIKAN: Target kedua tombol toggle ---
+    // --- Toggle Sidebar (Mobile & Desktop) ---
     $('#sidebarCollapse, #sidebarCollapseDesktop').on('click', function () {
         $('#sidebar').toggleClass('active');
-        // Optional: Save state
-        // localStorage.setItem('sidebarState', $('#sidebar').hasClass('active') ? 'closed' : 'open');
+        
+        // Animasi icon saat toggle (Optional UX enhancement)
+        const icon = $(this).find('i');
+        if($('#sidebar').hasClass('active')) {
+             // Jika sidebar tertutup (active class means hidden in this CSS logic usually)
+        }
     });
-    // --- AKHIR PERBAIKAN ---
 
-     // Optional: Restore sidebar state on page load
-    // if (localStorage.getItem('sidebarState') === 'closed') {
-    //     $('#sidebar').addClass('active');
-    // }
-
-    // Inisialisasi tooltip Bootstrap
+    // Inisialisasi Tooltip Bootstrap (Agar hover info muncul)
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
       return new bootstrap.Tooltip(tooltipTriggerEl)
@@ -51,20 +174,23 @@ $(document).ready(function () {
 </script>
 
 <?php
-// Kode notifikasi SweetAlert
+// --- LOGIKA NOTIFIKASI SWEETALERT (TETAP SAMA) ---
 if (isset($_SESSION['pesan'])) {
     echo "<script>
         if (typeof Swal !== 'undefined') {
             document.addEventListener('DOMContentLoaded', function() {
                 try {
                     let config = " . $_SESSION['pesan'] . ";
+                    // Pastikan timer ada agar tidak menggantung selamanya jika user diam
+                    if(!config.timer) config.timer = 3000; 
+                    if(!config.timerProgressBar) config.timerProgressBar = true;
+                    
                     Swal.fire(config);
                 } catch (e) {
                     console.error('Error parsing SweetAlert config:', e);
-                    Swal.fire({ icon: 'error', title: 'Error', text: 'Terjadi masalah saat menampilkan notifikasi.' });
                 }
             });
-        } else { console.error('SweetAlert2 is not loaded.'); }
+        }
     </script>";
     unset($_SESSION['pesan']);
 }
@@ -77,17 +203,13 @@ if (isset($_SESSION['pesan_error'])) {
                      Swal.fire(config);
                  } catch (e) {
                      console.error('Error parsing SweetAlert error config:', e);
-                     Swal.fire({ icon: 'error', title: 'Gagal!', text: 'Terjadi kesalahan.' });
+                     Swal.fire({ icon: 'error', title: 'Gagal!', text: 'Terjadi kesalahan sistem.' });
                  }
              });
-         } else { console.error('SweetAlert2 is not loaded.'); }
+         }
      </script>";
     unset($_SESSION['pesan_error']);
 }
-// Close DB connection if needed
-// if (isset($koneksi) && $koneksi instanceof mysqli && $koneksi->ping()) {
-//    mysqli_close($koneksi);
-// }
 ?>
 
 </body>

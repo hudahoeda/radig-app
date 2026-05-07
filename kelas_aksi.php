@@ -1,20 +1,24 @@
 <?php
 session_start();
 include 'koneksi.php';
-// Menambah batas eksekusi untuk import
+
+// Menambah batas eksekusi untuk proses berat seperti import/salin
 ini_set('memory_limit', '512M');
 ini_set('max_execution_time', '300');
 // Ini penting agar 'execute' melempar error (exception) jika gagal
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-if ($_SESSION['role'] != 'admin') { die("Akses ditolak."); }
+if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') { die("Akses ditolak."); }
 
 $aksi = isset($_GET['aksi']) ? $_GET['aksi'] : '';
 
+//======================================================================
+// --- AKSI TAMBAH KELAS ---
+//======================================================================
 if ($aksi == 'tambah') {
     $nama_kelas = $_POST['nama_kelas'];
     $fase = $_POST['fase'];
-    $id_wali_kelas = $_POST['id_wali_kelas'];
+    $id_wali_kelas = !empty($_POST['id_wali_kelas']) ? $_POST['id_wali_kelas'] : NULL;
     $id_tahun_ajaran = $_POST['id_tahun_ajaran'];
 
     try {
@@ -25,25 +29,26 @@ if ($aksi == 'tambah') {
         if(mysqli_stmt_execute($stmt)){
             $_SESSION['pesan'] = "Kelas baru berhasil ditambahkan.";
         }
-        header("location:kelas_tampil.php");
+        header("location:kelas_tampil.php?id_ta=" . $id_tahun_ajaran);
 
     } catch (mysqli_sql_exception $e) {
-        // [PERBAIKAN] Cek kode error 1062 (Duplicate Entry)
         if ($e->getCode() == 1062) {
             $_SESSION['pesan_error'] = "Gagal! Kelas dengan nama '" . htmlspecialchars($nama_kelas) . "' sudah ada untuk tahun ajaran ini.";
         } else {
             $_SESSION['pesan_error'] = "Terjadi error database: " . $e->getMessage();
         }
-        // Kembalikan ke form tambah
         header("location:kelas_tambah.php"); 
     }
     exit();
 
+//======================================================================
+// --- AKSI UPDATE KELAS ---
+//======================================================================
 } elseif ($aksi == 'update') {
     $id_kelas = $_POST['id_kelas'];
     $nama_kelas = $_POST['nama_kelas'];
     $fase = $_POST['fase'];
-    $id_wali_kelas = $_POST['id_wali_kelas'];
+    $id_wali_kelas = !empty($_POST['id_wali_kelas']) ? $_POST['id_wali_kelas'] : NULL;
     $id_tahun_ajaran = $_POST['id_tahun_ajaran'];
 
     try {
@@ -54,20 +59,21 @@ if ($aksi == 'tambah') {
         if(mysqli_stmt_execute($stmt)){
             $_SESSION['pesan'] = "Data kelas berhasil diperbarui.";
         }
-        header("location:kelas_tampil.php");
+        header("location:kelas_tampil.php?id_ta=" . $id_tahun_ajaran);
 
     } catch (mysqli_sql_exception $e) {
-        // [PERBAIKAN] Cek kode error 1062 (Duplicate Entry)
         if ($e->getCode() == 1062) {
             $_SESSION['pesan_error'] = "Gagal! Nama kelas '" . htmlspecialchars($nama_kelas) . "' sudah digunakan oleh kelas lain di tahun ajaran ini.";
         } else {
             $_SESSION['pesan_error'] = "Terjadi error database: " . $e->getMessage();
         }
-        // Kembalikan ke form edit
         header("location:kelas_edit.php?id=" . $id_kelas); 
     }
     exit();
 
+//======================================================================
+// --- AKSI HAPUS KELAS ---
+//======================================================================
 } elseif ($aksi == 'hapus') {
     $id_kelas = (int)$_GET['id'];
     
@@ -75,9 +81,10 @@ if ($aksi == 'tambah') {
     mysqli_report(MYSQLI_REPORT_OFF);
     
     try {
+        // Set NULL id_kelas pada siswa terlebih dahulu
         mysqli_query($koneksi, "UPDATE siswa SET id_kelas = NULL WHERE id_kelas = $id_kelas");
         
-        // Aktifkan lagi untuk 'DELETE'
+        // Aktifkan lagi report error untuk DELETE
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         
         $stmt = mysqli_prepare($koneksi, "DELETE FROM kelas WHERE id_kelas = ?");
@@ -87,7 +94,7 @@ if ($aksi == 'tambah') {
 
     } catch (mysqli_sql_exception $e) {
         if ($e->getCode() == 1451) { 
-            $_SESSION['pesan_error'] = "Gagal Hapus! Kelas ini tidak dapat dihapus karena masih memiliki data terkait (seperti data penilaian). Harap hapus data penilaian di kelas ini terlebih dahulu.";
+            $_SESSION['pesan_error'] = "Gagal Hapus! Kelas ini tidak dapat dihapus karena masih memiliki data terkait (seperti data penilaian).";
         } else {
             $_SESSION['pesan_error'] = "Gagal menghapus kelas. Error: " . $e->getMessage();
         }
@@ -97,7 +104,97 @@ if ($aksi == 'tambah') {
     exit();
 
 //======================================================================
-// --- AKSI IMPORT KELAS (Sudah aman, tidak perlu diubah) ---
+// --- [BARU] AKSI SALIN KELAS ---
+//======================================================================
+} elseif ($aksi == 'salin_kelas') {
+    $id_ta_sumber = $_POST['id_ta_sumber'];
+    $id_ta_tujuan = $_POST['id_ta_tujuan'];
+    $copy_wali = isset($_POST['copy_wali']) ? true : false;
+
+    // Validasi input
+    if (empty($id_ta_sumber) || empty($id_ta_tujuan)) {
+        $_SESSION['pesan_error'] = "Tahun ajaran sumber dan tujuan harus dipilih.";
+        header("location:kelas_tampil.php");
+        exit();
+    }
+
+    if ($id_ta_sumber == $id_ta_tujuan) {
+        $_SESSION['pesan_error'] = "Tahun ajaran sumber dan tujuan tidak boleh sama.";
+        header("location:kelas_tampil.php?id_ta=" . $id_ta_tujuan);
+        exit();
+    }
+
+    try {
+        // Ambil semua kelas dari tahun ajaran sumber
+        $query_sumber = mysqli_query($koneksi, "SELECT nama_kelas, fase, id_wali_kelas FROM kelas WHERE id_tahun_ajaran = '$id_ta_sumber'");
+        
+        // Siapkan variabel counter
+        $berhasil = 0;
+        $dilewati = 0; // Jika kelas sudah ada
+        $gagal = 0;
+
+        // Siapkan Prepared Statement (Agar efisien dalam loop)
+        // 1. Cek duplikat di tujuan
+        $stmt_cek = mysqli_prepare($koneksi, "SELECT id_kelas FROM kelas WHERE nama_kelas = ? AND id_tahun_ajaran = ? LIMIT 1");
+        // 2. Insert kelas baru
+        $stmt_insert = mysqli_prepare($koneksi, "INSERT INTO kelas (nama_kelas, fase, id_wali_kelas, id_tahun_ajaran) VALUES (?, ?, ?, ?)");
+
+        // Variabel binding
+        $bind_nama = "";
+        $bind_ta = $id_ta_tujuan;
+        $bind_fase = "";
+        $bind_wali = null;
+
+        // Binding parameter (dilakukan sekali di luar loop)
+        mysqli_stmt_bind_param($stmt_cek, "si", $bind_nama, $bind_ta);
+        mysqli_stmt_bind_param($stmt_insert, "ssii", $bind_nama, $bind_fase, $bind_wali, $bind_ta);
+
+        while ($kelas = mysqli_fetch_assoc($query_sumber)) {
+            $bind_nama = $kelas['nama_kelas'];
+            $bind_fase = $kelas['fase'];
+            
+            // Logika Wali Kelas: Jika dicentang DAN di sumber ada walinya, maka disalin. Jika tidak, NULL.
+            $bind_wali = ($copy_wali && !empty($kelas['id_wali_kelas'])) ? $kelas['id_wali_kelas'] : null;
+
+            // Eksekusi Cek Duplikat
+            mysqli_stmt_execute($stmt_cek);
+            mysqli_stmt_store_result($stmt_cek);
+
+            if (mysqli_stmt_num_rows($stmt_cek) > 0) {
+                // Kelas sudah ada di tujuan, lewati
+                $dilewati++;
+            } else {
+                // Insert kelas baru
+                if(mysqli_stmt_execute($stmt_insert)){
+                    $berhasil++;
+                } else {
+                    $gagal++;
+                }
+            }
+        }
+
+        // Buat Laporan untuk SweetAlert
+        $pesan_html = "<div class='text-start'>Proses Salin Kelas Selesai.<br>
+                       <span class='text-success'>&#10004; Berhasil Disalin: <b>$berhasil</b></span><br>
+                       <span class='text-warning'>&#9888; Dilewati (Sudah Ada): <b>$dilewati</b></span>";
+        
+        if ($gagal > 0) {
+            $pesan_html .= "<br><span class='text-danger'>&#10060; Gagal: <b>$gagal</b></span>";
+        }
+        $pesan_html .= "</div>";
+
+        // Kirim response JSON untuk SweetAlert
+        $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Salin Selesai', 'html' => $pesan_html]);
+
+    } catch (Exception $e) {
+        $_SESSION['pesan_error'] = "Terjadi kesalahan saat menyalin data: " . $e->getMessage();
+    }
+
+    header("location:kelas_tampil.php?id_ta=" . $id_ta_tujuan);
+    exit();
+
+//======================================================================
+// --- AKSI IMPORT KELAS ---
 //======================================================================
 } elseif ($aksi == 'import_kelas') {
     
@@ -139,6 +236,19 @@ if ($aksi == 'tambah') {
                 $stmt_insert = mysqli_prepare($koneksi, "INSERT INTO kelas (nama_kelas, fase, id_wali_kelas, id_tahun_ajaran) VALUES (?, ?, ?, ?)");
                 $stmt_update = mysqli_prepare($koneksi, "UPDATE kelas SET fase = ?, id_wali_kelas = ? WHERE id_kelas = ?");
                 
+                // Variabel binding
+                $b_nama_kelas = "";
+                $b_fase = "";
+                $b_username = "";
+                $b_id_wali = null;
+                $b_id_kelas_ex = 0;
+
+                // Bind parameter sekali di luar loop
+                mysqli_stmt_bind_param($stmt_check_guru, "s", $b_username);
+                mysqli_stmt_bind_param($stmt_check_kelas, "si", $b_nama_kelas, $id_ta_aktif);
+                mysqli_stmt_bind_param($stmt_insert, "ssii", $b_nama_kelas, $b_fase, $b_id_wali, $id_ta_aktif);
+                mysqli_stmt_bind_param($stmt_update, "sii", $b_fase, $b_id_wali, $b_id_kelas_ex);
+
                 $berhasil_tambah = 0;
                 $berhasil_update = 0;
                 $gagal_format = 0;
@@ -148,40 +258,38 @@ if ($aksi == 'tambah') {
                 foreach ($sheetData as $row) {
                     if ($baris_pertama) { $baris_pertama = false; continue; } // Lewati header
 
-                    $nama_kelas = trim($row['A'] ?? '');
-                    $fase = trim($row['B'] ?? '');
-                    $username_walikelas = trim($row['C'] ?? '');
+                    // Assign nilai ke variabel yang di-bind
+                    $b_nama_kelas = trim($row['A'] ?? '');
+                    $b_fase = trim($row['B'] ?? '');
+                    $b_username = trim($row['C'] ?? '');
 
                     // Validasi data baris
-                    if (empty($nama_kelas) || empty($fase) || empty($username_walikelas)) {
+                    if (empty($b_nama_kelas) || empty($b_fase) || empty($b_username)) {
                         $gagal_format++;
                         continue;
                     }
 
                     // 1. Cari ID Wali Kelas berdasarkan username
-                    mysqli_stmt_bind_param($stmt_check_guru, "s", $username_walikelas);
                     mysqli_stmt_execute($stmt_check_guru);
                     $result_guru = mysqli_stmt_get_result($stmt_check_guru);
                     if ($data_guru = mysqli_fetch_assoc($result_guru)) {
-                        $id_wali_kelas = $data_guru['id_guru'];
+                        $b_id_wali = $data_guru['id_guru'];
                     } else {
                         $gagal_guru++; // Guru tidak ditemukan
                         continue;
                     }
 
                     // 2. Cek apakah kelas sudah ada di TA Aktif
-                    mysqli_stmt_bind_param($stmt_check_kelas, "si", $nama_kelas, $id_ta_aktif);
                     mysqli_stmt_execute($stmt_check_kelas);
                     $result_kelas = mysqli_stmt_get_result($stmt_check_kelas);
+                    
                     if ($data_kelas = mysqli_fetch_assoc($result_kelas)) {
                         // KELAS SUDAH ADA -> UPDATE WALI KELAS & FASE
-                        $id_kelas_eksisting = $data_kelas['id_kelas'];
-                        mysqli_stmt_bind_param($stmt_update, "sii", $fase, $id_wali_kelas, $id_kelas_eksisting);
+                        $b_id_kelas_ex = $data_kelas['id_kelas'];
                         mysqli_stmt_execute($stmt_update);
                         $berhasil_update++;
                     } else {
                         // KELAS BELUM ADA -> INSERT BARU
-                        mysqli_stmt_bind_param($stmt_insert, "ssii", $nama_kelas, $fase, $id_wali_kelas, $id_ta_aktif);
                         mysqli_stmt_execute($stmt_insert);
                         $berhasil_tambah++;
                     }
@@ -193,7 +301,7 @@ if ($aksi == 'tambah') {
                 
             } catch(Exception $e) {
                 mysqli_rollback($koneksi);
-                // [PERBAIKAN] Cek kode error 1062 (Duplicate Entry) saat import
+                // Cek kode error 1062 (Duplicate Entry) saat import
                 if ($e instanceof mysqli_sql_exception && $e->getCode() == 1062) {
                      $_SESSION['pesan_error'] = "Gagal! Terdeteksi nama kelas duplikat di dalam file Excel Anda.";
                 } else {
@@ -226,4 +334,3 @@ else {
     exit();
 }
 ?>
-

@@ -328,6 +328,152 @@ if ($aksi == 'tambah') {
     header("location:pengguna_tampil.php");
     exit();
 
+// --- AKSI EXPORT GURU ---
+} elseif ($aksi == 'export_guru') {
+    require 'vendor/autoload.php';
+    
+    // 1. Ambil Data Guru
+    $query = "SELECT nip, nama_guru, username, role, terakhir_login FROM guru ORDER BY nama_guru ASC";
+    $result = mysqli_query($koneksi, $query);
+
+    // 2. Buat Spreadsheet Baru MENGGUNAKAN FULLY QUALIFIED CLASS NAME
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Data Guru & Admin');
+
+    // 3. Set Header
+    $headers = ['No', 'NIP', 'Nama Lengkap', 'Username', 'Role', 'Terakhir Login'];
+    $sheet->fromArray($headers, NULL, 'A1');
+    
+    // Style Header
+    $headerStyle = [
+        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+        'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '4F81BD']],
+        'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+    ];
+    $sheet->getStyle('A1:F1')->applyFromArray($headerStyle);
+
+    // 4. Isi Data
+    $row = 2;
+    $no = 1;
+    while($data = mysqli_fetch_assoc($result)) {
+        $sheet->setCellValue('A' . $row, $no++);
+        // Menggunakan konstanta dari namespace lengkap
+        $sheet->setCellValueExplicit('B' . $row, $data['nip'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING); 
+        $sheet->setCellValue('C' . $row, $data['nama_guru']);
+        $sheet->setCellValue('D' . $row, $data['username']);
+        $sheet->setCellValue('E' . $row, ucfirst($data['role']));
+        $sheet->setCellValue('F' . $row, $data['terakhir_login']);
+        $row++;
+    }
+
+    // Auto Size Column
+    foreach (range('A', 'F') as $col) {
+        $sheet->getColumnDimension($col)->setAutoSize(true);
+    }
+
+    // 5. Output File
+    $filename = "Data_Guru_Admin_" . date('Ymd_His') . ".xlsx";
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment;filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    // Menggunakan Writer dari namespace lengkap
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit();
+
+// --- AKSI EXPORT SISWA ---
+} elseif ($aksi == 'export_siswa') {
+    require 'vendor/autoload.php';
+    
+    // 1. Ambil Data Siswa & Kelas LENGKAP
+    $query = "SELECT s.nisn, s.nis, s.nama_lengkap, s.jenis_kelamin, s.tempat_lahir, s.tanggal_lahir, 
+              s.nik, s.agama, s.alamat, s.telepon_siswa,
+              k.nama_kelas, 
+              s.status_siswa, s.username,
+              s.sekolah_asal, s.diterima_tanggal, s.anak_ke, s.status_dalam_keluarga,
+              s.nama_ayah, s.pekerjaan_ayah,
+              s.nama_ibu, s.pekerjaan_ibu,
+              s.nama_wali, s.pekerjaan_wali, s.alamat_wali, s.telepon_wali
+              FROM siswa s 
+              LEFT JOIN kelas k ON s.id_kelas = k.id_kelas 
+              ORDER BY k.nama_kelas ASC, s.nama_lengkap ASC";
+    $result = mysqli_query($koneksi, $query);
+
+    // 2. Buat Spreadsheet Baru
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Data Siswa Lengkap');
+
+    // 3. Set Header (Dari A sampai Z)
+    $headers = [
+        'No', 'NISN', 'NIS', 'Nama Lengkap', 'L/P', 'Tempat Lahir', 'Tanggal Lahir', 
+        'NIK', 'Agama', 'Alamat', 'No. Telepon',
+        'Kelas', 'Status', 'Username',
+        'Sekolah Asal', 'Diterima Tanggal', 'Anak Ke', 'Status Keluarga',
+        'Nama Ayah', 'Pekerjaan Ayah', 
+        'Nama Ibu', 'Pekerjaan Ibu', 
+        'Nama Wali', 'Pekerjaan Wali', 'Alamat Wali', 'No. Telp Wali'
+    ];
+    $sheet->fromArray($headers, NULL, 'A1');
+    
+    // Style Header
+    $headerStyle = [
+        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+        'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '198754']], // Warna hijau
+        'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+    ];
+    $sheet->getStyle('A1:Z1')->applyFromArray($headerStyle);
+
+    // 4. Isi Data
+    $row = 2;
+    $no = 1;
+    while($data = mysqli_fetch_assoc($result)) {
+        $sheet->setCellValue('A' . $row, $no++);
+        $sheet->setCellValueExplicit('B' . $row, $data['nisn'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit('C' . $row, $data['nis'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $sheet->setCellValue('D' . $row, $data['nama_lengkap']);
+        $sheet->setCellValue('E' . $row, $data['jenis_kelamin']);
+        $sheet->setCellValue('F' . $row, $data['tempat_lahir']);
+        $sheet->setCellValue('G' . $row, $data['tanggal_lahir']);
+        $sheet->setCellValueExplicit('H' . $row, $data['nik'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING); // NIK sebagai text
+        $sheet->setCellValue('I' . $row, $data['agama']);
+        $sheet->setCellValue('J' . $row, $data['alamat']);
+        $sheet->setCellValueExplicit('K' . $row, $data['telepon_siswa'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $sheet->setCellValue('L' . $row, $data['nama_kelas'] ?? 'Belum Masuk Kelas');
+        $sheet->setCellValue('M' . $row, $data['status_siswa']);
+        $sheet->setCellValueExplicit('N' . $row, $data['username'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $sheet->setCellValue('O' . $row, $data['sekolah_asal']);
+        $sheet->setCellValue('P' . $row, $data['diterima_tanggal']);
+        $sheet->setCellValue('Q' . $row, $data['anak_ke']);
+        $sheet->setCellValue('R' . $row, $data['status_dalam_keluarga']);
+        $sheet->setCellValue('S' . $row, $data['nama_ayah']);
+        $sheet->setCellValue('T' . $row, $data['pekerjaan_ayah']);
+        $sheet->setCellValue('U' . $row, $data['nama_ibu']);
+        $sheet->setCellValue('V' . $row, $data['pekerjaan_ibu']);
+        $sheet->setCellValue('W' . $row, $data['nama_wali']);
+        $sheet->setCellValue('X' . $row, $data['pekerjaan_wali']);
+        $sheet->setCellValue('Y' . $row, $data['alamat_wali']);
+        $sheet->setCellValueExplicit('Z' . $row, $data['telepon_wali'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        $row++;
+    }
+
+    // Auto Size Column
+    foreach (range('A', 'Z') as $col) {
+        $sheet->getColumnDimension($col)->setAutoSize(true);
+    }
+
+    // 5. Output File
+    $filename = "Data_Siswa_Lengkap_" . date('Ymd_His') . ".xlsx";
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment;filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit();
+
 // --- AKSI IMPORT PENGGUNA (SIMPEL) ---
 } elseif ($aksi == 'import') {
     require 'vendor/autoload.php';

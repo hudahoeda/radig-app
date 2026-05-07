@@ -44,6 +44,8 @@ if ($aksi == 'simpan_urutan') {
 elseif ($aksi == 'tambah') {
     $kode_mapel = $_POST['kode_mapel'];
     $nama_mapel = $_POST['nama_mapel'];
+    // [MODIFIKASI] Ambil input kelompok jika ada di form, default 'Umum'
+    $kelompok = isset($_POST['kelompok']) ? $_POST['kelompok'] : 'Umum';
 
     // 1. Validasi input
     if (empty($kode_mapel) || empty($nama_mapel)) {
@@ -66,8 +68,9 @@ elseif ($aksi == 'tambah') {
     mysqli_stmt_close($cek_query);
 
     // 3. Masukkan data baru (set urutan ke 99 sesuai default di SQL)
-    $query = mysqli_prepare($koneksi, "INSERT INTO mata_pelajaran (kode_mapel, nama_mapel, urutan) VALUES (?, ?, 99)");
-    mysqli_stmt_bind_param($query, "ss", $kode_mapel, $nama_mapel);
+    // [MODIFIKASI] Insert juga kolom kelompok
+    $query = mysqli_prepare($koneksi, "INSERT INTO mata_pelajaran (kode_mapel, nama_mapel, kelompok, urutan) VALUES (?, ?, ?, 99)");
+    mysqli_stmt_bind_param($query, "sss", $kode_mapel, $nama_mapel, $kelompok);
     
     if (mysqli_stmt_execute($query)) {
         $_SESSION['pesan'] = "Mata pelajaran baru berhasil ditambahkan.";
@@ -84,6 +87,8 @@ elseif ($aksi == 'update') {
     $id_mapel = (int)$_POST['id_mapel'];
     $kode_mapel = $_POST['kode_mapel'];
     $nama_mapel = $_POST['nama_mapel'];
+    // [MODIFIKASI] Ambil input kelompok jika ada, default pertahankan yang lama atau 'Umum'
+    $kelompok = isset($_POST['kelompok']) ? $_POST['kelompok'] : 'Umum';
 
     if ($id_mapel <= 0 || empty($kode_mapel) || empty($nama_mapel)) {
         $_SESSION['pesan_error'] = "Semua kolom harus diisi.";
@@ -104,9 +109,9 @@ elseif ($aksi == 'update') {
     }
     mysqli_stmt_close($cek_query);
 
-
-    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET kode_mapel = ?, nama_mapel = ? WHERE id_mapel = ?");
-    mysqli_stmt_bind_param($query, "ssi", $kode_mapel, $nama_mapel, $id_mapel);
+    // [MODIFIKASI] Update juga kolom kelompok
+    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET kode_mapel = ?, nama_mapel = ?, kelompok = ? WHERE id_mapel = ?");
+    mysqli_stmt_bind_param($query, "sssi", $kode_mapel, $nama_mapel, $kelompok, $id_mapel);
     
     if (mysqli_stmt_execute($query)) {
         $_SESSION['pesan'] = "Data mata pelajaran berhasil diperbarui.";
@@ -118,7 +123,28 @@ elseif ($aksi == 'update') {
     exit();
 }
 
-// --- 4. LOGIKA BARU UNTUK HAPUS MAPEL ---
+// --- 4. [BARU] LOGIKA UBAH KELOMPOK (TOGGLE AGAMA) ---
+elseif ($aksi == 'set_kelompok') {
+    $id_mapel = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    $kelompok = isset($_GET['kelompok']) ? $_GET['kelompok'] : '';
+
+    if ($id_mapel > 0 && !empty($kelompok)) {
+        // Gunakan Prepared Statement untuk keamanan
+        $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET kelompok = ? WHERE id_mapel = ?");
+        mysqli_stmt_bind_param($query, "si", $kelompok, $id_mapel);
+        
+        if (mysqli_stmt_execute($query)) {
+            $_SESSION['pesan'] = "Kelompok mata pelajaran berhasil diubah menjadi " . htmlspecialchars($kelompok) . ".";
+        } else {
+            $_SESSION['pesan_error'] = "Gagal mengubah kelompok mapel.";
+        }
+        mysqli_stmt_close($query);
+    }
+    header("Location: mapel_tampil.php");
+    exit();
+}
+
+// --- 5. LOGIKA UNTUK HAPUS MAPEL ---
 elseif ($aksi == 'hapus') {
     $id_mapel = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 

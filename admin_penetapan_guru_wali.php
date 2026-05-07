@@ -1,4 +1,7 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(1);
 include 'header.php';
 include 'koneksi.php';
 
@@ -103,8 +106,8 @@ while ($row = mysqli_fetch_assoc($result_guru_wali_info)) {
 
 <div class="container-fluid">
     <div class="page-header text-white mb-4 shadow">
-        <h1 class="mb-1">Kelola Guru Wali</h1>
-        <p class="lead mb-0 opacity-75">Atur alokasi siswa ke guru wali dan lihat rekapitulasi per tahun ajaran.</p>
+        <h1 class="mb-1">Penugasan Guru Wali</h1>
+        <p class="lead mb-0 opacity-75">Atur alokasi siswa ke guru wali sesuai SK yang sudah di buat.</p>
     </div>
 
     <div class="card shadow-sm mb-4">

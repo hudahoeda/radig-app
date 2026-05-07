@@ -49,8 +49,50 @@ while ($row = mysqli_fetch_assoc($result_tp)) {
 }
 // ===================================================================
 
-// Ambil siswa dari kelas terkait
-$query_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif' ORDER BY nama_lengkap ASC");
+// --- AWAL MODIFIKASI: Filter Siswa Berdasarkan Agama ---
+// Ambil nama mapel yang sudah didapat di atas
+$nama_mapel_lower = strtolower($penilaian['nama_mapel']);
+$agama_terdeteksi = null;
+
+// Daftar agama yang akan diperiksa.
+// Sesuaikan ejaan ini agar MATCH persis
+// dengan nilai yang tersimpan di kolom `siswa.agama`.
+$agama_list = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Khonghucu'];
+
+foreach ($agama_list as $agama) {
+    // Kita cek menggunakan strpos di nama mapel (case-insensitive)
+    if (strpos($nama_mapel_lower, strtolower($agama)) !== false) {
+        // Jika ditemukan (misal mapel "P. Agama Islam", $agama = "Islam")
+        // Kita simpan nama agama (case-sensitive) dari $agama_list
+        $agama_terdeteksi = $agama;
+        break;
+    }
+}
+
+// Buat query dasar untuk mengambil siswa
+// Pastikan tabel siswa memiliki kolom 'agama'
+$query_siswa_sql = "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif'";
+
+// Jika mapel adalah mapel agama (ditemukan di $agama_list), tambahkan filter agama
+if ($agama_terdeteksi !== null) {
+    // $agama_terdeteksi berisi 'Islam', 'Kristen', 'Katolik', dll.
+    // Kita escape string untuk keamanan query
+    $agama_filter_sql = mysqli_real_escape_string($koneksi, $agama_terdeteksi);
+
+    // Tambahkan kondisi WHERE untuk menyaring siswa berdasarkan agama
+    $query_siswa_sql .= " AND agama = '$agama_filter_sql'";
+}
+
+// Selalu tambahkan ORDER BY di akhir query
+$query_siswa_sql .= " ORDER BY nama_lengkap ASC";
+
+// Eksekusi query yang sudah dinamis
+$query_siswa = mysqli_query($koneksi, $query_siswa_sql);
+// --- AKHIR MODIFIKASI ---
+
+// Baris Asli:
+// $query_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif' ORDER BY nama_lengkap ASC");
+
 
 // Ambil nilai yang sudah ada
 $query_nilai = mysqli_prepare($koneksi, "SELECT id_siswa, nilai FROM penilaian_detail_nilai WHERE id_penilaian = ?");
@@ -169,7 +211,25 @@ $kkm = $kkm_input_db ? (int)$kkm_input_db['nilai_pengaturan'] : 75; // Default k
                             </tr>
                         </thead>
                         <tbody>
-                            <?php $no = 1; while ($siswa = mysqli_fetch_assoc($query_siswa)) : ?>
+                            <?php 
+                            // --- AWAL MODIFIKASI: Cek jika query siswa kosong ---
+                            if (mysqli_num_rows($query_siswa) == 0) : 
+                            ?>
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted fst-italic p-4">
+                                        <?php if ($agama_terdeteksi !== null) : ?>
+                                            Tidak ada siswa dengan agama <strong><?php echo htmlspecialchars($agama_terdeteksi); ?></strong> yang ditemukan di kelas ini.
+                                        <?php else : ?>
+                                            Tidak ada siswa yang terdaftar di kelas ini.
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php 
+                            else :
+                                // --- LOOPING SISWA JIKA DITEMUKAN ---
+                                $no = 1; 
+                                while ($siswa = mysqli_fetch_assoc($query_siswa)) : 
+                            ?>
                                 <tr>
                                     <td class="text-center fw-bold"><?php echo $no++; ?></td>
                                     <td><?php echo htmlspecialchars($siswa['nama_lengkap']); ?></td>
@@ -177,7 +237,11 @@ $kkm = $kkm_input_db ? (int)$kkm_input_db['nilai_pengaturan'] : 75; // Default k
                                         <input type="number" name="nilai[<?php echo $siswa['id_siswa']; ?>]" class="form-control grade-input" value="<?php echo $nilai_tersimpan[$siswa['id_siswa']] ?? ''; ?>" min="0" max="100" placeholder="0-100">
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php 
+                                endwhile; 
+                            endif;
+                            // --- AKHIR MODIFIKASI ---
+                            ?>
                         </tbody>
                     </table>
                 </div>
@@ -236,4 +300,3 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <?php include 'footer.php'; ?>
-

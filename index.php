@@ -435,7 +435,7 @@ if (isset($koneksi)) {
                             <i class="bi bi-grid-1x2"></i>
                         </div>
                         <h4>Kurikulum Merdeka</h4>
-                        <p class="text-muted">Mendukung penilaian Sumatif, Formatif, dan Projek (P5) sesuai standar kurikulum terbaru.</p>
+                        <p class="text-muted">Mendukung penilaian Sumatif, Formatif, dan Kokurikuler sesuai standar kurikulum terbaru.</p>
                     </div>
                 </div>
                 <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">

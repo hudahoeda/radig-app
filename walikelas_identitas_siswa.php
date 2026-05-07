@@ -1,4 +1,5 @@
 <?php
+// walikelas_identitas_siswa.php
 include 'header.php';
 include 'koneksi.php';
 
@@ -11,6 +12,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'guru') {
 $id_wali_kelas = $_SESSION['id_guru'];
 
 // Ambil data kelas yang diampu oleh Wali Kelas yang sedang login
+// Pastikan mengambil tahun ajaran aktif
 $q_kelas = mysqli_prepare($koneksi, "SELECT id_kelas, nama_kelas FROM kelas WHERE id_wali_kelas = ? AND id_tahun_ajaran = (SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1)");
 mysqli_stmt_bind_param($q_kelas, "i", $id_wali_kelas);
 mysqli_stmt_execute($q_kelas);
@@ -22,7 +24,7 @@ $nama_kelas = $kelas['nama_kelas'] ?? 'Anda tidak terdaftar sebagai wali kelas';
 
 $daftar_siswa = [];
 if ($id_kelas) {
-    // Ambil juga foto siswa
+    // Ambil data siswa termasuk foto
     $q_siswa = mysqli_prepare($koneksi, "SELECT id_siswa, nis, nisn, nama_lengkap, foto_siswa FROM siswa WHERE id_kelas = ? ORDER BY nama_lengkap ASC");
     mysqli_stmt_bind_param($q_siswa, "i", $id_kelas);
     mysqli_stmt_execute($q_siswa);
@@ -35,7 +37,7 @@ if ($id_kelas) {
 
 <style>
     .page-header {
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        background: linear-gradient(135deg, var(--primary-color, #0d6efd), var(--secondary-color, #0dcaf0));
         padding: 2.5rem 2rem;
         border-radius: 0.75rem;
         color: white;
@@ -48,31 +50,33 @@ if ($id_kelas) {
         display: flex;
         align-items: center;
         justify-content: center;
+        background-color: #f8f9fa;
+        border-radius: 50%;
     }
     .table-students .student-avatar img {
         width: 100%;
         height: 100%;
         object-fit: cover;
         border-radius: 50%;
-        border: 2px solid var(--border-color);
+        border: 2px solid #dee2e6;
     }
     .table-students .student-avatar .icon-placeholder {
         font-size: 40px;
-        color: #adb5bd; /* Bootstrap's gray-500 */
+        color: #adb5bd; 
     }
 
     .table-students td {
         vertical-align: middle;
     }
     .table-students tbody tr {
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid #dee2e6;
     }
     .table-students tbody tr:last-child {
         border-bottom: none;
     }
     .table-students .student-name {
         font-weight: 600;
-        color: var(--text-dark);
+        color: #212529;
     }
 </style>
 
@@ -114,8 +118,11 @@ if ($id_kelas) {
                                 <td class="text-center fw-bold"><?php echo $no++; ?></td>
                                 <td>
                                     <div class="student-avatar mx-auto">
-                                    <?php if (!empty($siswa['foto_siswa'])): ?>
-                                        <img src="uploads/foto_siswa/<?php echo htmlspecialchars($siswa['foto_siswa']); ?>" alt="Foto <?php echo htmlspecialchars($siswa['nama_lengkap']); ?>">
+                                    <?php 
+                                        $foto_path = 'uploads/foto_siswa/' . ($siswa['foto_siswa'] ?? '');
+                                        if (!empty($siswa['foto_siswa']) && file_exists($foto_path)): 
+                                    ?>
+                                        <img src="<?php echo htmlspecialchars($foto_path); ?>" alt="Foto">
                                     <?php else: ?>
                                         <i class="bi bi-person-circle icon-placeholder"></i>
                                     <?php endif; ?>
@@ -127,9 +134,10 @@ if ($id_kelas) {
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group" role="group">
-                                        <a href="walikelas_edit_siswa.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Edit Identitas Siswa">
+                                        <a href="walikelas_edit_siswa.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-outline-primary btn-sm" data-bs-toggle="tooltip" title="Edit Identitas Siswa">
                                             <i class="bi bi-pencil-square"></i>
                                         </a>
+                                        <!-- Pastikan file walikelas_pindah_siswa.php sudah ada jika tombol ini diklik -->
                                         <a href="walikelas_pindah_siswa.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-outline-info btn-sm" data-bs-toggle="tooltip" title="Proses Pindah/Mutasi Siswa">
                                             <i class="bi bi-box-arrow-right"></i>
                                         </a>
@@ -147,7 +155,7 @@ if ($id_kelas) {
     <div class="card shadow-sm">
         <div class="card-body text-center py-5">
             <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
-            <h3 class="mt-3">Akses Ditolak</h3>
+            <h3 class="mt-3">Akses Ditolak / Kelas Tidak Ditemukan</h3>
             <p class="text-muted">Anda tidak terdaftar sebagai wali kelas pada tahun ajaran aktif ini.</p>
         </div>
     </div>
@@ -167,22 +175,44 @@ document.addEventListener('DOMContentLoaded', function () {
     const tableBody = document.getElementById('studentTableBody');
     const rows = tableBody.getElementsByTagName('tr');
 
-    searchInput.addEventListener('keyup', function() {
-        const filter = searchInput.value.toLowerCase();
-        for (let i = 0; i < rows.length; i++) {
-            let nameCell = rows[i].getElementsByTagName('td')[2]; // Kolom ke-3 (Nama Siswa)
-            if (nameCell) {
-                let textValue = nameCell.textContent || nameCell.innerText;
-                if (textValue.toLowerCase().indexOf(filter) > -1) {
-                    rows[i].style.display = "";
-                } else {
-                    rows[i].style.display = "none";
+    if(searchInput) {
+        searchInput.addEventListener('keyup', function() {
+            const filter = searchInput.value.toLowerCase();
+            for (let i = 0; i < rows.length; i++) {
+                let nameCell = rows[i].getElementsByTagName('td')[2]; // Kolom ke-3 (Nama Siswa)
+                if (nameCell) {
+                    let textValue = nameCell.textContent || nameCell.innerText;
+                    if (textValue.toLowerCase().indexOf(filter) > -1) {
+                        rows[i].style.display = "";
+                    } else {
+                        rows[i].style.display = "none";
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 });
 </script>
+
+<?php
+// [TAMBAHAN PENTING] 
+// Logic untuk menampilkan notifikasi SweetAlert jika ada session 'pesan' 
+// (berguna jika aksi redirect kembali ke halaman ini)
+if (isset($_SESSION['pesan'])) {
+    $data_pesan = json_decode($_SESSION['pesan'], true);
+    if ($data_pesan) {
+        echo "<script>
+            Swal.fire({
+                icon: '{$data_pesan['icon']}',
+                title: '{$data_pesan['title']}',
+                text: '{$data_pesan['text']}',
+                confirmButtonColor: '#0d6efd'
+            });
+        </script>";
+    }
+    unset($_SESSION['pesan']);
+}
+?>
 
 <?php
 include 'footer.php';

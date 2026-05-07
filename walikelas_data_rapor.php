@@ -29,10 +29,10 @@ $fase_kelas = $kelas['fase'] ?? '';
 $q_siswa = $id_kelas ? mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas ORDER BY nama_lengkap ASC") : false;
 
 // Pre-fetch data yang dibutuhkan untuk tampilan awal
-// 1. Data Rapor (Absensi & Catatan yang sudah ada)
+// 1. Data Rapor (Absensi & Catatan yang sudah ada) - DITAMBAHKAN KEPUTUSAN AKHIR
 $data_rapor = [];
 if ($id_kelas) {
-    $q_rapor = mysqli_query($koneksi, "SELECT id_rapor, id_siswa, sakit, izin, tanpa_keterangan, catatan_wali_kelas FROM rapor WHERE id_kelas = $id_kelas AND semester = $semester_aktif AND id_tahun_ajaran = $id_tahun_ajaran");
+    $q_rapor = mysqli_query($koneksi, "SELECT id_rapor, id_siswa, sakit, izin, tanpa_keterangan, catatan_wali_kelas, keputusan_akhir, keterangan_keputusan FROM rapor WHERE id_kelas = $id_kelas AND semester = $semester_aktif AND id_tahun_ajaran = $id_tahun_ajaran");
     while ($r = mysqli_fetch_assoc($q_rapor)) {
         $data_rapor[$r['id_siswa']] = $r;
     }
@@ -150,6 +150,7 @@ if ($id_kelas) {
                             <?php endif; ?>
                         </div>
                     </div>
+                    
                     <div class="accordion" id="accordionSiswa">
                         <?php $no = 1;
                         mysqli_data_seek($q_siswa, 0);
@@ -183,7 +184,8 @@ if ($id_kelas) {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div>
+                                                
+                                                <div class="mb-4">
                                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                                         <span class="info-label mb-0"><i class="bi bi-chat-left-text me-2"></i>Catatan Wali Kelas</span>
                                                         <button type="button" class="btn btn-info btn-sm generate-note-btn"
@@ -194,9 +196,42 @@ if ($id_kelas) {
                                                     <textarea name="catatan[<?php echo $id_siswa; ?>]"
                                                         id="catatan-<?php echo $id_siswa; ?>"
                                                         class="form-control"
-                                                        rows="8"
+                                                        rows="6"
                                                         placeholder="Klik tombol 'Buat Otomatis' atau isi manual..."><?php echo htmlspecialchars($rapor_siswa['catatan_wali_kelas'] ?? ''); ?></textarea>
                                                 </div>
+
+                                                <!-- FITUR NAIK KELAS / LULUS HANYA MUNCUL DI SEMESTER 2 -->
+                                                <?php if ($semester_aktif == 2): ?>
+                                                <div class="p-3 border rounded bg-white shadow-sm">
+                                                    <span class="info-label text-primary"><i class="bi bi-award-fill me-2"></i>Keputusan Akhir Semester 2</span>
+                                                    <div class="row g-3 mt-1">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small text-muted">Status</label>
+                                                            <select name="keputusan[<?php echo $id_siswa; ?>]" class="form-select status-keputusan" data-siswa="<?php echo $id_siswa; ?>">
+                                                                <option value="-" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '-') == '-') ? 'selected' : ''; ?>>- Belum Ditentukan -</option>
+                                                                
+                                                                <?php 
+                                                                // Deteksi Kelas 9 vs Kelas 7/8
+                                                                $nama_kls = strtoupper($kelas['nama_kelas']);
+                                                                if (strpos($nama_kls, 'IX') !== false || strpos($nama_kls, '9') !== false): 
+                                                                ?>
+                                                                    <option value="Lulus" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Lulus') ? 'selected' : ''; ?>>Lulus</option>
+                                                                    <option value="Tidak Lulus" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Tidak Lulus') ? 'selected' : ''; ?>>Tidak Lulus</option>
+                                                                <?php else: ?>
+                                                                    <option value="Naik Kelas" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Naik Kelas') ? 'selected' : ''; ?>>Naik Kelas</option>
+                                                                    <option value="Tinggal Kelas" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Tinggal Kelas') ? 'selected' : ''; ?>>Tinggal Kelas</option>
+                                                                <?php endif; ?>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 keterangan-container" id="keterangan-<?php echo $id_siswa; ?>" style="<?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Naik Kelas') ? '' : 'display: none;'; ?>">
+                                                            <label class="form-label small text-muted">Tujuan Kelas</label>
+                                                            <input type="text" name="keterangan_keputusan[<?php echo $id_siswa; ?>]" class="form-control" value="<?php echo htmlspecialchars($rapor_siswa['keterangan_keputusan'] ?? ''); ?>" placeholder="Contoh: VIII-A">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <?php endif; ?>
+                                                <!-- SELESAI FITUR NAIK KELAS / LULUS -->
+
                                             </div>
 
                                             <div class="col-lg-6">
@@ -263,6 +298,19 @@ if ($id_kelas) {
 
 <script>
     $(document).ready(function() {
+        // Logika untuk menampilkan/menyembunyikan form Keterangan (Tujuan Kelas)
+        $('.status-keputusan').on('change', function() {
+            var siswaId = $(this).data('siswa');
+            var status = $(this).val();
+            if(status === 'Naik Kelas') {
+                $('#keterangan-' + siswaId).slideDown();
+            } else {
+                $('#keterangan-' + siswaId).slideUp();
+                // Opsional: bersihkan value jika ditutup
+                // $('#keterangan-' + siswaId + ' input').val(''); 
+            }
+        });
+
         // Validasi input absensi
         $('input[name^="absensi"]').on('change', function(e) {
             e.preventDefault();

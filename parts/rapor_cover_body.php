@@ -1,95 +1,105 @@
 <?php
-// File ini dipanggil oleh rapor_cetak_massal.php
-// Variabel $koneksi, $id_siswa, dan $is_last_page sudah tersedia.
+// =======================================================================
+// TEMPLATE SAMPUL RAPOR (INCLUDED FILE)
+// Dipanggil oleh: rapor_cetak_massal.php
+// =======================================================================
 
-// Ambil data siswa yang diperlukan
+// 1. AMBIL DATA SISWA UNTUK SAMPUL
 $q_siswa_cover = mysqli_prepare($koneksi, "SELECT nama_lengkap, nis, nisn FROM siswa WHERE id_siswa = ?");
 mysqli_stmt_bind_param($q_siswa_cover, "i", $id_siswa);
 mysqli_stmt_execute($q_siswa_cover);
-$siswa_cover_result = mysqli_stmt_get_result($q_siswa_cover);
+$d_cover = mysqli_fetch_assoc(mysqli_stmt_get_result($q_siswa_cover));
 
-if (!$siswa_cover_result || mysqli_num_rows($siswa_cover_result) === 0) {
-    echo "<p>Data siswa dengan ID $id_siswa tidak ditemukan.</p>";
-    return;
-}
-$siswa_cover = mysqli_fetch_assoc($siswa_cover_result);
+if (!$d_cover) return;
 
-// --- Ambil data sekolah (termasuk jenjang dan logo) ---
-$q_sekolah_cover = mysqli_query($koneksi, "SELECT jenjang, logo_sekolah FROM sekolah WHERE id_sekolah = 1");
-$sekolah_cover = mysqli_fetch_assoc($q_sekolah_cover);
+// 2. AMBIL DATA SEKOLAH & JENJANG
+// [UPDATE] Menambahkan 'nama_sekolah' ke dalam query
+$q_sek_cover = mysqli_query($koneksi, "SELECT jenjang, logo_sekolah, nama_sekolah FROM sekolah WHERE id_sekolah = 1");
+$d_sek_cover = mysqli_fetch_assoc($q_sek_cover);
 
-$jenjang_sekolah = strtoupper($sekolah_cover['jenjang'] ?? 'SD'); // Default ke SD
-$nama_jenjang_lengkap = ($jenjang_sekolah == 'SD') ? 'SEKOLAH DASAR' : 'SEKOLAH MENENGAH PERTAMA';
-$nama_jenjang_singkat = ($jenjang_sekolah == 'SD') ? 'SD' : 'SMP';
-// --- AKHIR PENGAMBILAN DATA SEKOLAH ---
+$jenjang = strtoupper($d_sek_cover['jenjang'] ?? 'SD');
+$teks_jenjang = ($jenjang == 'SMP') ? 'SEKOLAH MENENGAH PERTAMA' : 'SEKOLAH DASAR';
+$singkatan_jenjang = ($jenjang == 'SMP') ? 'SMP' : 'SD';
 
-// Fungsi untuk mengubah gambar menjadi base64
-if (!function_exists('toBase64')) {
-    function toBase64($path) {
-        if (!@file_exists($path) || !@is_readable($path)) return '';
-        try {
-            $type = pathinfo($path, PATHINFO_EXTENSION);
-            if(!in_array(strtolower($type), ['png', 'jpg', 'jpeg', 'gif'])) return '';
-            $data = @file_get_contents($path);
-            if ($data === false) return '';
-            return 'data:image/' . $type . ';base64,' . base64_encode($data);
-        } catch (\Exception $e) {
-            error_log("Error converting image to base64: " . $e->getMessage());
-            return '';
-        }
+// 3. PERSIAPAN GAMBAR (MENGGUNAKAN FUNGSI GLOBAL)
+$logo_kab_html = '';
+if (file_exists('uploads/logo_kabupaten.png')) {
+    if (function_exists('get_img_base64_local')) {
+        $img_kab = get_img_base64_local('logo_kabupaten.png'); // Tanpa uploads/ karena fungsi sudah handle
+        $logo_kab_html = '<img src="'.$img_kab.'" style="height: 120px; width: auto;">';
     }
 }
 
-// --- Path logo dinamis ---
-$logo_kabupaten = toBase64('uploads/logo_kabupaten.png');
-$logo_sekolah_path = !empty($sekolah_cover['logo_sekolah']) ? 'uploads/' . $sekolah_cover['logo_sekolah'] : 'uploads/logosatap.png'; // Fallback
-$logo_sekolah = toBase64($logo_sekolah_path);
+$logo_sek_html = '';
+if (!empty($d_sek_cover['logo_sekolah'])) {
+    if (function_exists('get_img_base64_local')) {
+        // Cek path, jika di DB cuma nama file, tambah folder. Jika function handle folder, sesuaikan.
+        // Di main controller: get_img_base64_local($path) -> 'uploads/' . $path
+        $img_sek = get_img_base64_local($d_sek_cover['logo_sekolah']);
+        $logo_sek_html = '<img src="'.$img_sek.'" style="height: 160px; width: auto;">';
+    }
+}
 ?>
 
-<!-- KONTEN HTML DIMULAI (TIDAK ADA <html>, <head>, dll.) -->
-<!-- [PERBAIKAN] 'style' yang menyebabkan page-break ganda DIHAPUS dari div di bawah ini -->
-<div class="container">
+<!-- HTML CONTENT START -->
+<div class="container" style="text-align: center; font-family: 'Times New Roman', serif; padding-top: 20px;">
     
-    <!-- Bagian Atas: Logo dan Judul -->
-    <div>
-        <?php if ($logo_kabupaten): ?>
-            <img src="<?php echo $logo_kabupaten; ?>" class="logo-kabupaten" alt="Logo Kabupaten">
-        <?php else: ?>
-             <div style="height: 100px; margin-bottom: 15px;"></div> <!-- Disesuaikan ke 60px -->
-        <?php endif; ?>
-
-        <h1>RAPOR</h1>
-        
-        <h2><?php echo $nama_jenjang_lengkap; ?> <br> (<?php echo $nama_jenjang_singkat; ?>) </h2>
-        
-        <?php if ($logo_sekolah): ?>
-            <img src="<?php echo $logo_sekolah; ?>" class="logo-sekolah" alt="Logo Sekolah">
-        <?php else: ?>
-             <div style="height: 90px; margin-bottom: 15px;"></div> <!-- Disesuaikan ke 50px -->
+    <!-- 1. LOGO KABUPATEN/GARUDA (ATAS) -->
+    <div style="margin-bottom: 30px;">
+        <?php echo $logo_kab_html; ?>
+        <?php if (empty($logo_kab_html)): ?>
+            <div style="height: 100px;"></div> <!-- Spacer jika logo kosong -->
         <?php endif; ?>
     </div>
 
-    <!-- Bagian Tengah: Info Siswa -->
-    <div>
-        <div class="nama-siswa-container">
-            <!-- [PERBAIKAN] Inline style font-size dihapus, diatur oleh CSS master -->
-            <p>Nama Peserta Didik:</p>
-            <div class="nama-siswa-box">
-                <h3><?php echo strtoupper(htmlspecialchars($siswa_cover['nama_lengkap'])); ?></h3>
-            </div>
-        </div>
+    <!-- 2. JUDUL RAPOR -->
+    <div style="margin-bottom: 40px;">
+        <h1 style="font-size: 26pt; font-weight: bold; margin: 0; letter-spacing: 2px;">RAPOR</h1>
+        <h2 style="font-size: 16pt; font-weight: bold; margin-top: 5px; margin-bottom: 20px;">
+            <?php echo $teks_jenjang; ?>
+        </h2>
+        
+        <!-- NAMA SEKOLAH -->
+        <h2 style="font-size: 24pt; font-weight: bold; margin-top: 20px; margin-bottom: 0; text-transform: uppercase;">
+            <?php echo htmlspecialchars($d_sek_cover['nama_sekolah'] ?? 'NAMA SEKOLAH'); ?>
+        </h2>
+    </div>
 
-        <div class="nisn-container">
-            <p class="nisn-label">NIS / NISN:</p>
-            <p class="nisn-value"><?php echo htmlspecialchars($siswa_cover['nis'] ?? '-'); ?> / <?php echo htmlspecialchars($siswa_cover['nisn']); ?></p>
+    <!-- 3. LOGO SEKOLAH (TENGAH) -->
+    <div style="margin: 40px 0;">
+        <?php echo $logo_sek_html; ?>
+        <?php if (empty($logo_sek_html)): ?>
+            <div style="height: 150px; border: 1px dashed #ccc; width: 150px; margin: 0 auto; line-height: 150px; color: #ccc;">Logo Sekolah</div>
+        <?php endif; ?>
+    </div>
+
+    <!-- 4. NAMA PESERTA DIDIK -->
+    <div style="margin-top: 40px;">
+        <p style="font-size: 12pt; margin-bottom: 10px;">Nama Peserta Didik:</p>
+        
+        <!-- KOTAK NAMA -->
+        <div style="border: 2px solid #000; padding: 15px; width: 70%; margin: 0 auto; border-radius: 5px;">
+            <span style="font-size: 18pt; font-weight: bold; text-transform: uppercase;">
+                <?php echo htmlspecialchars($d_cover['nama_lengkap']); ?>
+            </span>
         </div>
     </div>
 
-    <!-- Bagian Bawah: Footer -->
-    <div class="footer-text">
-        <p>KEMENTERIAN PENDIDIKAN DASAR DAN MENENGAH</p>
-        <p>REPUBLIK INDONESIA</p>
+    <!-- 5. NIS / NISN -->
+    <div style="margin-top: 20px;">
+        <p style="font-size: 12pt; margin-bottom: 5px;">NIS / NISN:</p>
+        <p style="font-size: 14pt; font-weight: bold;">
+            <?php echo htmlspecialchars(($d_cover['nis']??'-') . ' / ' . ($d_cover['nisn']??'-')); ?>
+        </p>
     </div>
-    
+
+    <!-- 6. FOOTER KEMENTERIAN (BAWAH) -->
+    <div style="position: fixed; bottom: 80px; left: 0; right: 0; text-align: center;">
+        <div style="font-size: 14pt; font-weight: bold;">
+            KEMENTERIAN PENDIDIKAN DASAR DAN MENENGAH<br>
+            REPUBLIK INDONESIA
+        </div>
+    </div>
+
 </div>
-<!-- KONTEN HTML BERAKHIR -->
+<!-- HTML CONTENT END -->

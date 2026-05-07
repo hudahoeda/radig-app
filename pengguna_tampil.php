@@ -3,7 +3,7 @@ include 'koneksi.php';
 include 'header.php'; // Menggunakan header.php Anda
 
 // Pastikan hanya admin yang bisa mengakses halaman ini
-if ($_SESSION['role'] != 'admin') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
     echo "<script>Swal.fire({icon: 'error', title: 'Akses Ditolak', text: 'Anda tidak memiliki wewenang.'}).then(() => window.location = 'dashboard.php');</script>";
     include 'footer.php';
     exit;
@@ -22,13 +22,14 @@ $search_siswa = isset($_GET['search_siswa']) ? mysqli_real_escape_string($koneks
 $page_siswa = isset($_GET['page_siswa']) ? (int)$_GET['page_siswa'] : 1;
 $offset_siswa = ($page_siswa - 1) * $limit;
 
-// --- [LOGIKA TAB BARU] ---
-// Tentukan sub-tab aktif (ini yang paling penting)
+// --- [LOGIKA TAB BARU - UPDATED] ---
+// Tentukan sub-tab aktif
 $active_tab = $_GET['tab'] ?? 'guru'; // Default ke sub-tab 'guru'
 
 // Tentukan main-tab aktif berdasarkan sub-tab
+// Hapus 'import_mengajar' dari array pengecekan
 $active_main_tab = 'pengguna'; // Default
-if (in_array($active_tab, ['import_guru', 'import_mengajar', 'import_siswa'])) {
+if (in_array($active_tab, ['import_guru', 'import_siswa'])) {
     $active_main_tab = 'import';
 }
 
@@ -51,7 +52,7 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
     .page-header .btn { box-shadow: 0 4px 15px rgba(0,0,0,0.2); font-weight: 600; }
 
     .user-card-container {
-        padding: 1.5rem 0; /* Disederhanakan */
+        padding: 1.5rem 0;
         padding-bottom: 100px; /* Ruang untuk action bar */
     }
     .user-card {
@@ -91,136 +92,71 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
         display: inline-block;
         margin-right: 6px;
     }
-    .status-online {
-        background-color: var(--bs-success);
-    }
-    .status-offline {
-        background-color: var(--bs-secondary);
-    }
-    .search-bar {
-        max-width: 400px;
-    }
+    .status-online { background-color: var(--bs-success); }
+    .status-offline { background-color: var(--bs-secondary); }
+    .search-bar { max-width: 400px; }
+    
+    /* Import Styles */
     .import-step {
-        display: flex;
-        align-items: flex-start;
-        margin-bottom: 1.5rem;
+        display: flex; align-items: flex-start; margin-bottom: 1.5rem;
     }
     .import-step .step-number {
-        flex-shrink: 0;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background-color: var(--primary-color);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 1.2rem;
-        margin-right: 1rem;
+        flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+        background-color: var(--primary-color); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: bold; font-size: 1.2rem; margin-right: 1rem;
     }
-    .import-step .step-content h5 {
-        font-weight: 600;
-        color: var(--primary-color);
-    }
+    .import-step .step-content h5 { font-weight: 600; color: var(--primary-color); }
     .drop-zone {
-        border: 2px dashed #ccc;
-        border-radius: 0.5rem;
-        padding: 2rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s ease-in-out;
+        border: 2px dashed #ccc; border-radius: 0.5rem; padding: 2rem;
+        text-align: center; cursor: pointer; transition: all 0.2s ease-in-out;
     }
     .drop-zone:hover, .drop-zone.drag-over {
-        border-color: var(--primary-color);
-        background-color: #f8f9fa;
+        border-color: var(--primary-color); background-color: #f8f9fa;
     }
-    .drop-zone .drop-zone-prompt {
-        color: #6c757d;
-    }
+    .drop-zone .drop-zone-prompt { color: #6c757d; }
     .file-details {
-        background-color: #e9f5ff;
-        border: 1px solid #b8d9f7;
-        border-radius: 0.5rem;
-        padding: 1rem;
-    }
-    .bulk-action-bar {
-        position: fixed;
-        bottom: -100px; /* Mulai dari luar layar */
-        left: 0;
-        right: 0;
-        background-color: #212529;
-        color: white;
-        padding: 1rem 1.5rem;
-        box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
-        z-index: 100;
-        transition: bottom 0.3s ease-in-out;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .bulk-action-bar.show {
-        bottom: 0; /* Muncul ke layar */
-    }
-    /* Penyesuaian untuk sidebar Anda */
-    #content .bulk-action-bar {
-        left: 260px; /* Default */
-    }
-    #sidebar.active + #content .bulk-action-bar {
-        left: 0;
-    }
-    @media (max-width: 768px) {
-        #content .bulk-action-bar { left: 0; }
-    }
-
-    /* --- [GAYA TAB BARU] --- */
-    /* Main tabs */
-    .nav-tabs-main {
-        border-bottom: 2px solid var(--border-color);
-    }
-    .nav-tabs-main .nav-link {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: var(--bs-secondary-color);
-        border: none;
-        border-bottom: 4px solid transparent;
-        padding: 1rem 1.5rem;
-    }
-    .nav-tabs-main .nav-link.active {
-        color: var(--primary-color);
-        border-color: var(--primary-color);
-        background-color: transparent;
+        background-color: #e9f5ff; border: 1px solid #b8d9f7;
+        border-radius: 0.5rem; padding: 1rem;
     }
     
-    /* Sub tabs */
+    /* Bulk Action Bar */
+    .bulk-action-bar {
+        position: fixed; bottom: -100px; left: 0; right: 0;
+        background-color: #212529; color: white;
+        padding: 1rem 1.5rem; box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
+        z-index: 100; transition: bottom 0.3s ease-in-out;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .bulk-action-bar.show { bottom: 0; }
+    
+    /* Sidebar adjustment */
+    #content .bulk-action-bar { left: 260px; }
+    #sidebar.active + #content .bulk-action-bar { left: 0; }
+    @media (max-width: 768px) { #content .bulk-action-bar { left: 0; } }
+
+    /* Tab Styles */
+    .nav-tabs-main { border-bottom: 2px solid var(--border-color); }
+    .nav-tabs-main .nav-link {
+        font-size: 1.1rem; font-weight: 600; color: var(--bs-secondary-color);
+        border: none; border-bottom: 4px solid transparent; padding: 1rem 1.5rem;
+    }
+    .nav-tabs-main .nav-link.active {
+        color: var(--primary-color); border-color: var(--primary-color); background-color: transparent;
+    }
+    
     .nav-pills-sub {
-        background-color: #f8f9fa;
-        padding: 0.5rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1.5rem;
-        border: 1px solid var(--border-color);
+        background-color: #f8f9fa; padding: 0.5rem; border-radius: 0.5rem;
+        margin-bottom: 1.5rem; border: 1px solid var(--border-color);
     }
-    .nav-pills-sub .nav-link {
-        font-weight: 500;
-        color: var(--text-dark);
-        border-radius: 0.375rem;
-    }
+    .nav-pills-sub .nav-link { font-weight: 500; color: var(--text-dark); border-radius: 0.375rem; }
     .nav-pills-sub .nav-link.active {
-        background-color: var(--primary-color);
-        color: white;
+        background-color: var(--primary-color); color: white;
         box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3);
     }
     
-    /* Container untuk main tab content */
-    .card-body > .tab-content > .tab-pane {
-        padding: 1.5rem 0 0 0;
-    }
-    /* Hapus padding default card-body agar tab utama menempel */
-    .card-body.card-body-tabbed {
-        padding: 0 1.5rem 1.5rem 1.5rem;
-    }
-    /* --- [AKHIR GAYA TAB BARU] --- */
-
+    .card-body > .tab-content > .tab-pane { padding: 1.5rem 0 0 0; }
+    .card-body.card-body-tabbed { padding: 0 1.5rem 1.5rem 1.5rem; }
 </style>
 
 <div class="container-fluid">
@@ -238,7 +174,7 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
     </div>
 
     <div class="card shadow-sm">
-        <!-- [NAVIGASI TAB UTAMA BARU] -->
+        <!-- [NAVIGASI TAB UTAMA] -->
         <div class="card-header bg-light p-0 border-bottom-0">
             <ul class="nav nav-tabs nav-tabs-main nav-fill" id="mainTab" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -249,10 +185,8 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                 </li>
             </ul>
         </div>
-        <!-- [AKHIR NAVIGASI TAB UTAMA BARU] -->
 
         <div class="card-body card-body-tabbed">
-            <!-- [CONTENT TAB UTAMA BARU] -->
             <div class="tab-content" id="mainTabContent">
 
                 <!-- [PANE TAB UTAMA: PENGGUNA] -->
@@ -274,20 +208,27 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                         <!-- [SUB-PANE: GURU & ADMIN] -->
                         <div class="tab-pane fade <?php if($active_tab == 'guru') echo 'show active'; ?> user-card-container" id="guru-admin-pane" role="tabpanel">
                             
-                            <!-- Search Bar Guru -->
-                            <form method="GET" action="pengguna_tampil.php" class="mb-4">
-                                <input type="hidden" name="tab" value="guru">
-                                <div class="input-group search-bar">
-                                    <input type="text" id="searchGuru" name="search_guru" class="form-control" placeholder="Cari nama atau NIP guru/admin..." value="<?php echo htmlspecialchars($search_guru); ?>">
-                                    <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
-                                </div>
-                            </form>
+                            <!-- Toolbar: Search & Download -->
+                            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                                <!-- Search Bar Guru -->
+                                <form method="GET" action="pengguna_tampil.php" class="flex-grow-1" style="max-width: 400px;">
+                                    <input type="hidden" name="tab" value="guru">
+                                    <div class="input-group search-bar w-100">
+                                        <input type="text" id="searchGuru" name="search_guru" class="form-control" placeholder="Cari nama atau NIP guru/admin..." value="<?php echo htmlspecialchars($search_guru); ?>">
+                                        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+                                    </div>
+                                </form>
+                                <!-- Tombol Download Data Guru -->
+                                <a href="pengguna_aksi.php?aksi=export_guru" target="_blank" class="btn btn-success text-white shadow-sm">
+                                    <i class="bi bi-file-earmark-excel-fill me-2"></i>Download Data Guru
+                                </a>
+                            </div>
 
                             <!-- Form Bulk Delete Guru -->
                             <form id="form-bulk-delete-guru" action="pengguna_aksi.php?aksi=hapus_banyak" method="POST">
                                 <div id="guru-list" class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
                                     <?php
-                                    // Query Guru (Sama seperti sebelumnya)
+                                    // Query Guru
                                     $where_guru = ''; $params_guru = []; $types_guru = '';
                                     if (!empty($search_guru)) {
                                         $where_guru = " WHERE (nama_guru LIKE ? OR nip LIKE ?)";
@@ -386,20 +327,27 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                         <!-- [SUB-PANE: SISWA] -->
                         <div class="tab-pane fade <?php if($active_tab == 'siswa') echo 'show active'; ?> user-card-container" id="siswa-pane" role="tabpanel">
                             
-                            <!-- Search Bar Siswa -->
-                            <form method="GET" action="pengguna_tampil.php" class="mb-4">
-                                <input type="hidden" name="tab" value="siswa">
-                                <div class="input-group search-bar">
-                                    <input type="text" id="searchSiswa" name="search_siswa" class="form-control" placeholder="Cari nama atau NISN siswa..." value="<?php echo htmlspecialchars($search_siswa); ?>">
-                                    <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
-                                </div>
-                            </form>
+                            <!-- Toolbar: Search & Download Siswa -->
+                            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                                <!-- Search Bar Siswa -->
+                                <form method="GET" action="pengguna_tampil.php" class="flex-grow-1" style="max-width: 400px;">
+                                    <input type="hidden" name="tab" value="siswa">
+                                    <div class="input-group search-bar w-100">
+                                        <input type="text" id="searchSiswa" name="search_siswa" class="form-control" placeholder="Cari nama atau NISN siswa..." value="<?php echo htmlspecialchars($search_siswa); ?>">
+                                        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+                                    </div>
+                                </form>
+                                <!-- Tombol Download Data Siswa -->
+                                <a href="pengguna_aksi.php?aksi=export_siswa" target="_blank" class="btn btn-success text-white shadow-sm">
+                                    <i class="bi bi-file-earmark-excel-fill me-2"></i>Download Data Siswa
+                                </a>
+                            </div>
 
                             <!-- Form Bulk Delete Siswa -->
                             <form id="form-bulk-delete-siswa" action="siswa_aksi.php?aksi=hapus_banyak" method="POST">
                                 <div id="siswa-list" class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
                                     <?php
-                                    // Query Siswa (Sama seperti sebelumnya)
+                                    // Query Siswa
                                     $where_siswa = ''; $params_siswa = []; $types_siswa = '';
                                     if (!empty($search_siswa)) {
                                         $where_siswa = " WHERE (s.nama_lengkap LIKE ? OR s.nisn LIKE ?)";
@@ -486,13 +434,10 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                 <!-- [PANE TAB UTAMA: IMPORT] -->
                 <div class="tab-pane fade <?php if($active_main_tab == 'import') echo 'show active'; ?>" id="import-main-pane" role="tabpanel">
 
-                    <!-- Sub-Tab Navigasi (Import) -->
+                    <!-- Sub-Tab Navigasi (Import) - HANYA 2 TAB -->
                     <ul class="nav nav-pills nav-pills-sub nav-fill" id="importSubTab" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link <?php if($active_tab == 'import_guru') echo 'active'; ?>" id="sub-tab-import-guru" data-bs-toggle="tab" data-bs-target="#import-guru-pane" type="button" role="tab">Import Guru (Simpel)</button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link <?php if($active_tab == 'import_mengajar') echo 'active'; ?>" id="sub-tab-import-mengajar" data-bs-toggle="tab" data-bs-target="#import-guru-mengajar-pane" type="button" role="tab">Import Guru & Mengajar</button>
+                            <button class="nav-link <?php if($active_tab == 'import_guru') echo 'active'; ?>" id="sub-tab-import-guru" data-bs-toggle="tab" data-bs-target="#import-guru-pane" type="button" role="tab">Import Guru</button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link <?php if($active_tab == 'import_siswa') echo 'active'; ?>" id="sub-tab-import-siswa" data-bs-toggle="tab" data-bs-target="#import-siswa-pane" type="button" role="tab">Import Siswa</button>
@@ -502,14 +447,14 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                     <!-- Sub-Tab Content (Import) -->
                     <div class="tab-content" id="importSubTabContent">
                         
-                        <!-- [SUB-PANE: IMPORT GURU SIMPEL] -->
+                        <!-- [SUB-PANE: IMPORT GURU] -->
                         <div class="tab-pane fade <?php if($active_tab == 'import_guru') echo 'show active'; ?> p-4" id="import-guru-pane" role="tabpanel">
                             <div class="import-step">
                                 <div class="step-number">1</div>
                                 <div class="step-content">
-                                    <h5>Download Template (Simpel)</h5>
-                                    <p class="text-muted mb-0">Hanya untuk menambah data guru (NIP, Nama, Username, Role) tanpa penugasan mengajar.</p>
-                                    <a href="template_download.php?tipe=guru" class="btn btn-sm btn-success mt-2"><i class="bi bi-file-earmark-arrow-down-fill me-2"></i>Download Template Guru (Simpel)</a>
+                                    <h5>Download Template Guru</h5>
+                                    <p class="text-muted mb-0">Hanya untuk menambah data guru (NIP, Nama, Username, Role).</p>
+                                    <a href="template_download.php?tipe=guru" class="btn btn-sm btn-success mt-2"><i class="bi bi-file-earmark-arrow-down-fill me-2"></i>Download Template Guru</a>
                                 </div>
                             </div>
                             <hr>
@@ -523,35 +468,7 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                                             <div class="file-details" id="file-details-guru" style="display: none;"></div>
                                         </label>
                                         <input type="file" id="file-input-guru" name="file_pengguna" accept=".xlsx" style="display: none;" required>
-                                        <div class="d-grid mt-3"><button type="submit" class="btn btn-primary btn-lg" id="btn-import-guru" disabled><i class="bi bi-upload me-2"></i>Import (Simpel)</button></div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- [SUB-PANE: IMPORT GURU & MENGAJAR] -->
-                        <div class="tab-pane fade <?php if($active_tab == 'import_mengajar') echo 'show active'; ?> p-4" id="import-guru-mengajar-pane" role="tabpanel">
-                            <div class="alert alert-info" role="alert"><h4 class="alert-heading"><i class="bi bi-info-circle-fill me-2"></i>Impor Lengkap!</h4><p>Gunakan tab ini untuk mengimpor data guru baru sekaligus mendaftarkan penugasan mengajar (Mapel & Kelas) mereka dalam satu file.</p></div>
-                            <div class="import-step">
-                                <div class="step-number">1</div>
-                                <div class="step-content">
-                                    <h5>Download Template (Lengkap)</h5>
-                                    <p class="text-muted mb-0">Template ini berisi kolom untuk data guru dan penugasan mengajar, beserta lembar data Mapel & Kelas.</p>
-                                    <a href="template_download.php?tipe=guru_mengajar" class="btn btn-sm btn-success mt-2"><i class="bi bi-file-earmark-arrow-down-fill me-2"></i>Download Template Guru & Mengajar</a>
-                                </div>
-                            </div>
-                            <hr>
-                            <div class="import-step">
-                                <div class="step-number">2</div>
-                                <div class="step-content w-100">
-                                    <h5>Unggah File Template (Lengkap)</h5>
-                                    <form action="pengguna_aksi.php?aksi=import_mengajar" method="POST" enctype="multipart/form-data" id="form-import-guru-mengajar">
-                                        <label for="file-input-guru-mengajar" class="drop-zone" id="drop-zone-guru-mengajar">
-                                            <div class="drop-zone-prompt"><i class="bi bi-cloud-arrow-up-fill fs-1 text-muted"></i><p class="mt-2"><b>Seret file ke sini</b> atau klik untuk memilih</p><small class="text-muted">Hanya file .xlsx yang diizinkan</small></div>
-                                            <div class="file-details" id="file-details-guru-mengajar" style="display: none;"></div>
-                                        </label>
-                                        <input type="file" id="file-input-guru-mengajar" name="file_guru_mengajar" accept=".xlsx" style="display: none;" required>
-                                        <div class="d-grid mt-3"><button type="submit" class="btn btn-primary btn-lg" id="btn-import-guru-mengajar" disabled><i class="bi bi-upload me-2"></i>Import Guru & Mengajar</Tsubmit></div>
+                                        <div class="d-grid mt-3"><button type="submit" class="btn btn-primary btn-lg" id="btn-import-guru" disabled><i class="bi bi-upload me-2"></i>Import Guru</button></div>
                                     </form>
                                 </div>
                             </div>
@@ -562,7 +479,7 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                              <div class="import-step">
                                 <div class="step-number">1</div>
                                 <div class="step-content">
-                                    <h5>Download Template</h5>
+                                    <h5>Download Template Siswa</h5>
                                     <p class="text-muted mb-0">Unduh template Excel yang sudah disediakan untuk data siswa lengkap.</p>
                                     <a href="template_download.php?tipe=siswa" class="btn btn-sm btn-success mt-2"><i class="bi bi-file-earmark-arrow-down-fill me-2"></i>Download Template Siswa</a>
                                 </div>
@@ -578,7 +495,7 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                                             <div class="file-details" id="file-details-siswa" style="display: none;"></div>
                                         </label>
                                         <input type="file" id="file-input-siswa" name="file_siswa_lengkap" accept=".xlsx" style="display: none;" required>
-                                        <div class="d-grid mt-3"><button type="submit" class="btn btn-primary btn-lg" id="btn-import-siswa" disabled><i class="bi bi-upload me-2"></i>Import dari Template</button></div>
+                                        <div class="d-grid mt-3"><button type="submit" class="btn btn-primary btn-lg" id="btn-import-siswa" disabled><i class="bi bi-upload me-2"></i>Import Siswa</button></div>
                                     </form>
                                 </div>
                             </div>
@@ -655,8 +572,6 @@ if (isset($_SESSION['pesan'])) {
     unset($_SESSION['pesan_error']);
 }
 ?>
-<!-- [AKHIR PERBAIKAN LOKASI SWEETALERT] -->
-
 
 <!-- Footer (untuk memanggil jQuery, dll) -->
 <?php include 'footer.php'; ?>
@@ -734,7 +649,7 @@ function setupImportTab(tabPrefix, inputFileElementName) {
     });
 }
 setupImportTab('guru', 'file_pengguna');
-setupImportTab('guru-mengajar', 'file_guru_mengajar'); 
+// setupImportTab('guru-mengajar', 'file_guru_mengajar'); // DIHAPUS
 setupImportTab('siswa', 'file_siswa_lengkap');
 
 // Logika untuk Bulk Delete GURU
@@ -833,5 +748,4 @@ $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function(e) {
         $('#bulk-action-bar-siswa').removeClass('show');
     }
 });
-
 </script>

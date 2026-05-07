@@ -1,402 +1,468 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// =======================================================================
+// KONFIGURASI SISTEM & ERROR HANDLING
+// =======================================================================
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(0);
 
-// --- SOLUSI ERROR WAKTU DAN MEMORI ---
-ini_set('memory_limit', '512M'); // Naikkan batas memori
-ini_set('max_execution_time', 300); // Naikkan batas waktu ke 300 detik (5 menit)
-// --- AKHIR SOLUSI ---
+// Meningkatkan batas memori dan waktu eksekusi untuk proses berat
+ini_set('memory_limit', '1024M'); 
+ini_set('max_execution_time', 3600); // 1 Jam
 
 session_start();
 include 'koneksi.php';
-include 'utils/tanggal.php';
-require_once 'libs/autoload.php';
+require_once 'libs/autoload.php'; 
+
+// [CRITICAL] Memperbesar limit concat agar deskripsi panjang tidak terpotong saat massal
+mysqli_query($koneksi, "SET SESSION group_concat_max_len = 1000000");
+
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
-// 1. Ambil dan validasi data dari URL
-$tipe_cetak = isset($_GET['tipe']) ? $_GET['tipe'] : '';
+// =======================================================================
+// 1. VALIDASI INPUT & PARAMETER
+// =======================================================================
+$tipe_cetak = isset($_GET['tipe']) ? $_GET['tipe'] : ''; // rapor, sampul, identitas
 $ids_string = isset($_GET['ids']) ? $_GET['ids'] : '';
+$kertas_get = isset($_GET['kertas']) ? $_GET['kertas'] : ''; // Opsi override kertas dari URL
 
 $allowed_types = ['sampul', 'identitas', 'rapor'];
 if (empty($tipe_cetak) || empty($ids_string) || !in_array($tipe_cetak, $allowed_types)) {
-    die("Error: Parameter tidak lengkap atau tidak valid.");
+    die("Error: Parameter tidak lengkap atau tipe cetak salah.");
 }
 
-// 2. Ubah string ID menjadi array integer yang aman untuk query
+// Konversi string ID "1,2,3" menjadi array [1, 2, 3]
 $ids = array_map('intval', explode(',', $ids_string));
 if (empty($ids)) {
-    die("Error: Tidak ada siswa yang dipilih.");
+    die("Error: Tidak ada siswa dipilih.");
 }
 
-// --- OPTIMASI: PINDAHKAN QUERY GLOBAL KE LUAR LOOP ---
-// Ambil semua data yang SAMA untuk semua siswa HANYA SATU KALI.
+// =======================================================================
+// 2. FUNGSI BANTUAN (SINKRONISASI DENGAN SINGLE PRINT)
+// =======================================================================
 
-// Mengambil data pengaturan (Tahun Ajaran, Semester, Tanggal, Opsi Rapor) dari DB
+// Fungsi Tanggal Indo
+if (!function_exists('tanggal_indo')) {
+    function tanggal_indo($tanggal) {
+        if(empty($tanggal) || $tanggal == '0000-00-00') return "-";
+        $bulan = array (1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember');
+        $pecahkan = explode('-', $tanggal);
+        if(count($pecahkan) != 3) return $tanggal;
+        return $pecahkan[2] . ' ' . $bulan[ (int)$pecahkan[1] ] . ' ' . $pecahkan[0];
+    }
+}
+
+// Fungsi Hitung Deskripsi Otomatis (LOGIKA SAMA PERSIS DENGAN SINGLE PRINT)
+if (!function_exists('hitungDeskripsiOtomatis')) {
+    function hitungDeskripsiOtomatis($koneksi, $id_siswa, $id_kelas, $id_mapel, $kkm, $semester_aktif) {
+        
+        // 1. Ambil Nilai Sumatif Lingkup Materi (TP)
+        $stmt_sumatif_tp = mysqli_prepare($koneksi, "
+            SELECT p.nama_penilaian, p.subjenis_penilaian, pdn.nilai, p.bobot_penilaian, GROUP_CONCAT(tp.deskripsi_tp SEPARATOR '|||') as deskripsi_tps
+            FROM penilaian_detail_nilai pdn
+            JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian 
+            JOIN penilaian_tp ptp ON p.id_penilaian = ptp.id_penilaian
+            JOIN tujuan_pembelajaran tp ON ptp.id_tp = tp.id_tp 
+            WHERE p.subjenis_penilaian = 'Sumatif TP' 
+            AND pdn.id_siswa = ? AND p.id_mapel = ? AND p.id_kelas = ? AND p.semester = ? 
+            GROUP BY p.id_penilaian, pdn.nilai, p.bobot_penilaian
+        ");
+        
+        // 2. Ambil Nilai Sumatif Akhir
+        $stmt_sumatif_akhir = mysqli_prepare($koneksi, "
+            SELECT p.nama_penilaian, p.subjenis_penilaian, pdn.nilai, p.bobot_penilaian 
+            FROM penilaian_detail_nilai pdn
+            JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian 
+            WHERE p.subjenis_penilaian IN ('Sumatif Akhir Semester', 'Sumatif Akhir Tahun')
+            AND p.jenis_penilaian = 'Sumatif' 
+            AND pdn.id_siswa = ? AND p.id_mapel = ? AND p.id_kelas = ? AND p.semester = ?
+        ");
+        
+        $skor_per_tp = []; 
+        $total_nilai_x_bobot = 0; 
+        $total_bobot = 0;
+
+        // Eksekusi Query Sumatif TP
+        if ($stmt_sumatif_tp) {
+            mysqli_stmt_bind_param($stmt_sumatif_tp, "iiii", $id_siswa, $id_mapel, $id_kelas, $semester_aktif);
+            mysqli_stmt_execute($stmt_sumatif_tp);
+            $result_sumatif_tp = mysqli_stmt_get_result($stmt_sumatif_tp);
+            
+            while ($d_nilai = mysqli_fetch_assoc($result_sumatif_tp)) {
+                $tps_individu = explode('|||', $d_nilai['deskripsi_tps']);
+                foreach($tps_individu as $desc_tp) {
+                    if (!isset($skor_per_tp[$desc_tp])) { $skor_per_tp[$desc_tp] = []; }
+                    $skor_per_tp[$desc_tp][] = $d_nilai['nilai'];
+                }
+                $total_nilai_x_bobot += $d_nilai['nilai'] * $d_nilai['bobot_penilaian'];
+                $total_bobot += $d_nilai['bobot_penilaian'];
+            }
+            mysqli_stmt_close($stmt_sumatif_tp);
+        }
+
+        // Eksekusi Query Sumatif Akhir
+        if ($stmt_sumatif_akhir) {
+            mysqli_stmt_bind_param($stmt_sumatif_akhir, "iiii", $id_siswa, $id_mapel, $id_kelas, $semester_aktif);
+            mysqli_stmt_execute($stmt_sumatif_akhir);
+            $result_sumatif_akhir = mysqli_stmt_get_result($stmt_sumatif_akhir);
+            
+            while ($d_nilai_akhir = mysqli_fetch_assoc($result_sumatif_akhir)) {
+                $total_nilai_x_bobot += $d_nilai_akhir['nilai'] * $d_nilai_akhir['bobot_penilaian'];
+                $total_bobot += $d_nilai_akhir['bobot_penilaian'];
+            }
+            mysqli_stmt_close($stmt_sumatif_akhir);
+        }
+
+        // Hitung Nilai Akhir
+        $nilai_akhir = ($total_bobot > 0) ? round($total_nilai_x_bobot / $total_bobot) : null;
+        
+        // LOGIKA DESKRIPSI
+        $deskripsi_final = '';
+        
+        if ($nilai_akhir !== null && !empty($skor_per_tp)) {
+            $rekap_tp = [];
+            $kata_hapus = ['Peserta didik dapat', 'Peserta didik mampu', 'peserta didik mampu', 'siswa dapat', 'siswa mampu', 'mampu', 'memahami', 'menguasai', 'menjelaskan', 'menganalisis', 'mengidentifikasi', 'menentukan', 'menunjukkan'];
+
+            foreach ($skor_per_tp as $deskripsi => $skor_array) {
+                $avg = array_sum($skor_array) / count($skor_array);
+                
+                $desc_clean = trim(str_ireplace($kata_hapus, '', $deskripsi));
+                $desc_clean = preg_replace('/\s+/', ' ', $desc_clean);
+                $desc_clean = lcfirst($desc_clean);
+
+                if (!isset($rekap_tp[$desc_clean]) || $rekap_tp[$desc_clean]['avg'] < $avg) {
+                     $rekap_tp[$desc_clean] = ['avg' => $avg];
+                }
+            }
+
+            $tp_lulus = [];
+            $tp_remedi = [];
+
+            foreach ($rekap_tp as $clean_desc => $data) {
+                if ($data['avg'] >= $kkm) {
+                    $tp_lulus[$clean_desc] = $data['avg'];
+                } else {
+                    $tp_remedi[$clean_desc] = $data['avg'];
+                }
+            }
+
+            arsort($tp_lulus); 
+            asort($tp_remedi); 
+
+            $top_tp = array_slice(array_keys($tp_lulus), 0, 2);
+            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 2); 
+            
+            $deskripsi_draf = "";
+            
+            if (!empty($top_tp)) {
+                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
+            } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
+                $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
+            }
+            
+            if (!empty($bottom_tp)) {
+                $deskripsi_draf .= "Namun, perlu penguatan lebih lanjut dalam " . implode(', ', $bottom_tp) . ".";
+            } else {
+                $deskripsi_draf .= "Semua tujuan pembelajaran telah tercapai dengan baik.";
+            }
+
+            $deskripsi_final = ucfirst(trim($deskripsi_draf));
+            
+        } elseif ($nilai_akhir !== null && $nilai_akhir >= $kkm) {
+            $deskripsi_final = 'Capaian kompetensi secara umum sudah menunjukkan ketuntasan yang baik.';
+        } elseif ($nilai_akhir !== null && $nilai_akhir < $kkm) {
+            $deskripsi_final = 'Perlu ditingkatkan lagi pada beberapa tujuan pembelajaran untuk mencapai ketuntasan minimum.';
+        } else {
+            $deskripsi_final = '-';
+        }
+
+        return $deskripsi_final;
+    }
+}
+
+// =======================================================================
+// 3. PENGAMBILAN PENGATURAN GLOBAL
+// =======================================================================
 $pengaturan_pdf = [];
 $query_pengaturan_pdf = mysqli_query($koneksi, "SELECT * FROM pengaturan");
 while($row_pdf = mysqli_fetch_assoc($query_pengaturan_pdf)){
     $pengaturan_pdf[$row_pdf['nama_pengaturan']] = $row_pdf['nilai_pengaturan'];
 }
 
-// Data Tahun Ajaran
+// Mode Tanpa KOP & Margin
+$cetak_tanpa_kop = $pengaturan_pdf['cetak_tanpa_kop'] ?? '0';
+$margin_raw = (isset($pengaturan_pdf['margin_atas_tanpa_kop']) && $pengaturan_pdf['margin_atas_tanpa_kop'] !== '') ? $pengaturan_pdf['margin_atas_tanpa_kop'] : '1'; 
+$margin_atas = str_replace(',', '.', $margin_raw);
+$kkm = isset($pengaturan_pdf['kkm']) ? (int)$pengaturan_pdf['kkm'] : 75;
+
+// Tahun Ajaran & Semester
 $q_ta_pdf = mysqli_query($koneksi, "SELECT id_tahun_ajaran, tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
 $d_ta_pdf = mysqli_fetch_assoc($q_ta_pdf);
-$id_tahun_ajaran_pdf = $d_ta_pdf['id_tahun_ajaran'];
-$tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'];
+$id_tahun_ajaran_pdf = $d_ta_pdf['id_tahun_ajaran'] ?? 0;
+$tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'] ?? '-';
 
-// Data Semester
 $semester_aktif_pdf = $pengaturan_pdf['semester_aktif'] ?? 1;
 $semester_text_pdf = ($semester_aktif_pdf == 1) ? '1 (Ganjil)' : '2 (Genap)';
+$tanggal_rapor_db = $pengaturan_pdf['tanggal_rapor'] ?? date("Y-m-d");
+$tanggal_rapor_pdf = tanggal_indo($tanggal_rapor_db);
 
-// Data Tanggal Rapor
-$tanggal_rapor_db_pdf = $pengaturan_pdf['tanggal_rapor'] ?? date_id("Y-m-d");
-$tanggal_rapor_pdf = date_id("d F Y", strtotime($tanggal_rapor_db_pdf));
-
-// Data Sekolah
 $q_sekolah_pdf = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
 $sekolah_pdf = mysqli_fetch_assoc($q_sekolah_pdf);
 
-// [MODIFIKASI] Mengambil Ukuran Kertas dan Skema Warna
-$ukuran_kertas_pdf = $pengaturan_pdf['rapor_ukuran_kertas'] ?? 'A4'; // Default A4
-$skema_warna_pdf = $pengaturan_pdf['rapor_skema_warna'] ?? 'bw'; // Default Hitam Putih (bw)
+// Konfigurasi Kertas & Warna
+$ukuran_kertas_db = $pengaturan_pdf['rapor_ukuran_kertas'] ?? 'A4';
+$ukuran_kertas_pdf = !empty($kertas_get) ? $kertas_get : $ukuran_kertas_db;
 
-// [MODIFIKASI] Logika Skema Warna Hemat Tinta
+$skema_warna_pdf = $pengaturan_pdf['rapor_skema_warna'] ?? 'bw';
 $theme_color_bg = '#444444'; $theme_color_text = '#FFFFFF'; $theme_color_kop = '#000000';
+
 switch ($skema_warna_pdf) {
     case 'light_blue': $theme_color_bg = '#E3F2FD'; $theme_color_text = '#0D47A1'; $theme_color_kop = '#0D47A1'; break;
     case 'light_green': $theme_color_bg = '#E8F5E9'; $theme_color_text = '#1B5E20'; $theme_color_kop = '#1B5E20'; break;
     case 'light_teal': $theme_color_bg = '#E0F2F1'; $theme_color_text = '#004D40'; $theme_color_kop = '#004D40'; break;
     case 'light_purple': $theme_color_bg = '#EDE7F6'; $theme_color_text = '#311B92'; $theme_color_kop = '#311B92'; break;
     case 'light_red': $theme_color_bg = '#FFEBEE'; $theme_color_text = '#B71C1C'; $theme_color_kop = '#B71C1C'; break;
-    case 'bw': default: $theme_color_bg = '#444444'; $theme_color_text = '#FFFFFF'; $theme_color_kop = '#000000'; break;
 }
 
-// --- OPTIMASI: PROSES GAMBAR BASE64 SATU KALI SAJA ---
-$watermark_base64 = '';
-$watermark_filename_pdf = $pengaturan_pdf['watermark_file'] ?? null;
-if (!empty($watermark_filename_pdf)) {
-    $server_path_wm = 'uploads/' . $watermark_filename_pdf;
-    if (file_exists($server_path_wm) && is_readable($server_path_wm)) {
-        $type_pdf = pathinfo($server_path_wm, PATHINFO_EXTENSION);
-        $data_pdf = file_get_contents($server_path_wm);
-        $watermark_base64 = 'data:image/' . $type_pdf . ';base64,' . base64_encode($data_pdf);
+// Helper untuk mengambil gambar lokal agar aman di DomPDF
+function get_img_base64_local($path) {
+    if (!empty($path)) {
+        $full_path = 'uploads/' . $path;
+        if (file_exists($full_path) && is_readable($full_path)) {
+            $type = pathinfo($full_path, PATHINFO_EXTENSION);
+            $data = file_get_contents($full_path);
+            return 'data:image/' . $type . ';base64,' . base64_encode($data);
+        }
     }
+    return '';
 }
+
+// Persiapan Gambar
+$watermark_base64 = get_img_base64_local($pengaturan_pdf['watermark_file'] ?? null);
+
+$tampil_kop_img = ($pengaturan_pdf['rapor_tampil_kop'] ?? '0') == '1';
+$file_kop = !empty($pengaturan_pdf['kop_sekolah']) ? $pengaturan_pdf['kop_sekolah'] : ($pengaturan_pdf['file_kop_sekolah'] ?? '');
+$kop_base64 = ($tampil_kop_img) ? get_img_base64_local($file_kop) : '';
+
 $base64_kab_pdf = '';
-$path_kab_pdf = 'uploads/logo_kabupaten.png';
-if (file_exists($path_kab_pdf)) {
-    $type_kab_pdf = pathinfo($path_kab_pdf, PATHINFO_EXTENSION);
-    $data_kab_pdf = file_get_contents($path_kab_pdf);
-    $base64_kab_pdf = 'data:image/' . $type_kab_pdf . ';base64,' . base64_encode($data_kab_pdf);
+if (file_exists('uploads/logo_kabupaten.png')) {
+    $base64_kab_pdf = 'data:image/png;base64,' . base64_encode(file_get_contents('uploads/logo_kabupaten.png'));
 }
-$base64_sekolah_pdf = '';
-if (!empty($sekolah_pdf['logo_sekolah'])) {
-    $path_sekolah_pdf = 'uploads/' . $sekolah_pdf['logo_sekolah'];
-    if (file_exists($path_sekolah_pdf)) {
-        $type_sekolah_pdf = pathinfo($path_sekolah_pdf, PATHINFO_EXTENSION);
-        $data_sekolah_pdf = file_get_contents($path_sekolah_pdf);
-        $base64_sekolah_pdf = 'data:image/' . $type_sekolah_pdf . ';base64,' . base64_encode($data_sekolah_pdf);
-    }
-}
-// --- AKHIR OPTIMASI ---
+$base64_sekolah_pdf = get_img_base64_local($sekolah_pdf['logo_sekolah'] ?? '');
 
-// ==================================================================
-// --- [PERUBAHAN BESAR] MEMILIH CSS BERDASARKAN TIPE CETAK ---
-// ==================================================================
-
-$style_css = '';
-
-switch ($tipe_cetak) {
-    case 'sampul':
-        $style_css = "
-            @page { margin: 0; }
-            body { font-family: 'Times New Roman', Times, serif; text-align: center; padding: 30px; }
-            .container { 
-                padding: 40px; 
-                border: 3px double black; 
-                height: 90%;
-            }
-            .logo-kabupaten { width: 100px; margin-bottom: 15px; } /* Ukuran dikembalikan ke 100px */
-            .logo-sekolah { width: 90px; margin-bottom: 15px; } /* Ukuran dikembalikan ke 90px */
-            h1 { font-size: 26pt; margin: 20px 0 5px 0; }
-            h2 { font-size: 18pt; margin: 0 0 25px 0; font-weight: normal; line-height: 1.3; }
-            .nama-siswa-container { margin-top: 60px; margin-bottom: 10px;}
-            .nama-siswa-container p { font-size: 14pt; margin: 0; }
-            .nama-siswa-box {
-                display: inline-block;
-                border: 2px solid black;
-                padding: 8px 15px;
-                margin-top: 5px;
-                min-width: 60%;
-                max-width: 80%;
-            }
-            .nama-siswa-box h3 { font-weight: bold; margin:0; font-size: 16pt; word-wrap: break-word; }
-            .nisn-container { margin-top: 30px; margin-bottom: 60px;}
-            .nisn-label { font-size: 14pt; margin-bottom: 5px;}
-            .nisn-value { font-size: 14pt; font-weight: bold; }
-            .footer-text { margin-top: 60px; font-size: 12pt; font-weight: bold; line-height: 1.4; }
-            .page-break { page-break-after: always; }
-        ";
-        break;
-
-    case 'identitas':
-        $style_css = "
-            @page { margin: 2cm 1.5cm; } 
-            body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; }
-            .header { text-align: center; margin-bottom: 20px; font-weight: bold; font-size: 14pt; text-decoration: underline; }
-            .info-table { width: 100%; border-collapse: collapse; line-height: 1.5; }
-            .info-table td { vertical-align: top; padding: 1px 4px;}
-            .info-table td.num { width: 4%; }
-            .info-table td.label { width: 30%; }
-            .info-table td.separator { width: 2%; }
-            .signature-block { margin-top: 30px; float: right; width: 40%; text-align: left;}
-            .signature-space { height: 60px; }
-            .photo-box {
-                width: 3cm;
-                height: 4cm;
-                border: 1px solid #000;
-                float: right;
-                margin-left: 20px;
-            }
-            .clearfix::after { content: ''; clear: both; display: table; }
-            .page-break { page-break-after: always; }
-        ";
-        break;
-
-    case 'rapor':
-    default:
-        $style_css = "
-            /* [PERBAIKAN] Margin atas dan bawah untuk KOP dan FOOTER */
-            @page { margin: 150px 30px 40px 30px; } 
-            
-            body { font-family: 'Times New Roman', Times, serif; font-size: 10pt; color: #333; }
-            .rapor-page-container { }
-            
-            /* [PERBAIKAN] KOP (Header) HANYA ADA SATU dan posisinya fixed */
-            header { position: fixed; top: -150px; left: 0px; right: 0px; }
-            .header-table { width: 100%; border-bottom: 3px solid #000; padding-bottom: 5px; margin-top: 10px; }
-            .header-table .logo-left { width: 90px; text-align: center; vertical-align: middle; }
-            .header-table .logo-right { width: 90px; text-align: center; vertical-align: middle; }
-            .header-table .kop-text { text-align: center; vertical-align: middle; }
-            .header-table h4, .header-table h3, .header-table p { margin: 0; line-height: 1.2; }
-            .header-table h4 { font-size: 14pt; }
-            .header-table .dinas-text { font-size: 13pt; margin-top: 2px; }
-            .header-table .school-name { font-size: 20pt; font-weight: bold; margin: 5px 0; color: {$theme_color_kop}; }
-            .header-table .school-info { font-size: 9pt; line-height: 1.3; }
-            
-            /* [PERBAIKAN] Main content tidak perlu margin-top lagi karena sudah diatur @page */
-            main { margin-top: 0px; }
-            
-            .section-header-table { width: 100%; border-collapse: collapse; page-break-inside: avoid; margin-top: 20px; }
-            .section-header-table th { border: 1px solid #000; background-color: {$theme_color_bg}; color: {$theme_color_text}; padding: 6px; font-size: 11pt; text-align: left; font-weight: bold; }
-            .section-header-table td { border: 1px solid #000; padding: 6px; vertical-align: top; }
-            .info-table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-top: 15px; margin-bottom: 20px;}
-            .info-table td { padding: 3px 5px; }
-            
-            .content-table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
-            .content-table th, .content-table td { border: 1px solid #000; padding: 6px; text-align: left; vertical-align: top; page-break-inside: auto; }
-            .content-table tr { page-break-inside: auto; page-break-after: auto; }
-            .content-table thead { display: table-header-group; }
-            .content-table tbody { display: table-row-group; }
-            
-            .content-table th { background-color: {$theme_color_bg}; color: {$theme_color_text}; font-weight: bold; text-align: center; vertical-align: middle; }
-            .section-title { font-weight: bold; font-size: 11pt; margin-top: 20px; margin-bottom: 8px; }
-            .text-center { text-align: center; }
-            .capaian { font-size: 9pt; line-height: 1.4; white-space: pre-wrap; }
-            .signature-table { width: 100%; margin-top: 40px; font-size: 10pt; page-break-inside: avoid; }
-            .signature-table td { width: 33.33%; text-align: center; }
-            .signature-space { height: 60px; }
-            
-            .page-break { page-break-after: always; }
-            
-            .watermark { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1000; text-align: center; }
-            .watermark img { opacity: 0.1; width: 100%; margin-top: -10%; }
-
-            /* [PERBAIKAN] FOOTER HANYA ADA SATU dan posisinya fixed */
-            footer { position: fixed; bottom: -30px; left: 30px; right: 30px; height: 20px; font-size: 8pt; font-style: italic; color: #555; }
-            .footer-table { width: 100%; }
-            .footer-table .nama-sekolah { text-align: left; width: 45%; }
-            .footer-table .nama-siswa { text-align: center; width: 30%; } /* Kolom nama siswa tetap ada, tapi akan kita kosongkan */
-            .footer-table .halaman { text-align: right; width: 25%; }
-            .footer-table .halaman .page-number:after { content: counter(page); }
-        ";
-        break;
-}
-
-// Mulai menangkap output HTML untuk digabungkan
+// =======================================================================
+// 4. MULAI GENERATE HTML UTAMA
+// =======================================================================
 ob_start();
 ?>
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Laporan Massal - <?php echo ucfirst($tipe_cetak); ?></title>
+    <title>Cetak Massal - <?php echo ucfirst($tipe_cetak); ?></title>
     <style>
-        <?php echo $style_css; // Menyuntikkan CSS yang tepat ?>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 10pt; color: #333; }
+        
+        /* LOGIKA MARGIN HALAMAN BERDASARKAN TIPE CETAK */
+        <?php if ($tipe_cetak == 'sampul'): ?>
+            @page { margin: 2cm 2cm 1cm 2cm; }
+        <?php elseif ($tipe_cetak == 'identitas'): ?>
+            @page { margin: 2cm 2cm 2cm 2cm; }
+        <?php else: // Tipe Rapor (Grades) ?>
+            <?php if ($cetak_tanpa_kop == '1'): ?>
+                @page { margin: <?php echo $margin_atas; ?>cm 30px 40px 30px; }
+            <?php else: ?>
+                @page { margin: 170px 30px 40px 30px; } 
+                header { position: fixed; top: -150px; left: 0px; right: 0px; height: 140px; }
+            <?php endif; ?>
+        <?php endif; ?>
+
+        /* CSS Header KOP (Hanya untuk Rapor) */
+        .header-table { width: 100%; border-bottom: 3px solid #000; padding-bottom: 5px; margin-bottom: 10px; }
+        .header-table .logo-left { width: 90px; text-align: center; vertical-align: middle; }
+        .header-table .logo-right { width: 90px; text-align: center; vertical-align: middle; }
+        .header-table .kop-text { text-align: center; vertical-align: middle; }
+        .header-table h4, .header-table h3, .header-table p { margin: 0; line-height: 1.2; }
+        .header-table h4 { font-size: 14pt; }
+        .header-table .dinas-text { font-size: 13pt; margin-top: 2px; }
+        .header-table .school-name { font-size: 20pt; font-weight: bold; margin: 5px 0; color: <?php echo $theme_color_kop; ?>; }
+        .header-table .school-info { font-size: 9pt; line-height: 1.3; }
+
+        .header-img-container { width: 100%; text-align: center; margin-bottom: 5px; }
+        .header-img-container img { width: 100%; height: auto; max-height: 140px; }
+        
+        main { margin-top: 0px; }
+        
+        /* CSS TABEL RAPOR (Grades) */
+        .info-table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 10px; }
+        .info-table td { padding: 2px 5px; vertical-align: top; }
+        
+        .content-table { width: 100%; border-collapse: collapse; page-break-inside: auto; margin-top: 10px; }
+        .content-table th, .content-table td { border: 1px solid #000; padding: 6px; text-align: left; vertical-align: top; page-break-inside: auto; }
+        .content-table tr { page-break-inside: auto; page-break-after: auto; }
+        .content-table th { background-color: <?php echo $theme_color_bg; ?>; color: <?php echo $theme_color_text; ?>; font-weight: bold; text-align: center; vertical-align: middle; }
+        
+        .nilai-cetak { font-weight: bold; text-align: center !important; vertical-align: middle; font-size: 11pt; }
+        .section-title { font-weight: bold; font-size: 11pt; margin-top: 20px; margin-bottom: 8px; }
+        .text-center { text-align: center !important; }
+        .capaian { font-size: 9pt; line-height: 1.4; text-align: justify; }
+        
+        /* CSS TTD UMUM */
+        .signature-table { width: 100%; margin-top: 40px; font-size: 10pt; page-break-inside: avoid; }
+        .signature-table td { width: 33.33%; text-align: center; vertical-align: top; }
+        .signature-space { height: 60px; }
+        
+        /* CSS WATERMARK */
+        .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: -1000; text-align: center; width: 100%; }
+        .watermark img { opacity: 0.1; width: 100%; height: auto; display: block; }
+
+        /* CSS FOOTER (Halaman Rapor) */
+        footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 35px; font-size: 8pt; color: #666; border-top: 2px solid <?php echo $theme_color_bg; ?>; padding: 8px 30px 0 30px; background-color: #fff; }
+        .footer-table { width: 100%; border-collapse: collapse; margin: 0; }
+        .footer-table td { padding: 0; vertical-align: top; }
+        .footer-left { text-align: left; width: 40%; font-weight: bold; color: <?php echo $theme_color_kop; ?>; }
+        .footer-center { text-align: center; width: 40%; font-style: italic; color: #999; }
+        .footer-right { text-align: right; width: 20%; }
+        .page-badge { background-color: #f0f0f0; padding: 2px 8px; border-radius: 4px; font-weight: bold; color: #333; }
+        .footer-right .page-number:after { content: counter(page); }
+        
+        /* CSS KHUSUS MASSAL: Page Break */
+        .page-break { page-break-after: always; clear: both; }
+
+        /* --- STYLES KHUSUS IDENTITAS & SAMPUL (DIAMBIL DARI CETAK SATUAN) --- */
+        <?php if ($tipe_cetak == 'identitas' || $tipe_cetak == 'sampul'): ?>
+            .biodata-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-family: 'Times New Roman', serif; }
+            .biodata-table td { padding: 6px 5px; vertical-align: top; border-bottom: 1px solid #e0e0e0; }
+            .biodata-table tr:last-child td { border-bottom: none; }
+            .label-text { color: #444; }
+            .value-text { color: #000; font-weight: 500; }
+            
+            .nama-siswa-box { border: 2px solid #000; padding: 15px; width: 70%; margin: 0 auto; border-radius: 5px; }
+            .footer-text-sampul { position: fixed; bottom: 40px; left: 0; right: 0; text-align: center; font-size: 14pt; font-weight: bold; }
+        <?php endif; ?>
     </style>
 </head>
 <body>
 
-    <?php if ($tipe_cetak == 'rapor'): // Watermark dan KOP hanya untuk rapor ?>
-    <div class="watermark">
-        <?php if (!empty($watermark_base64)): ?>
-            <img src="<?php echo $watermark_base64; ?>" alt="Watermark">
-        <?php endif; ?>
-    </div>
+    <!-- GLOBAL HEADER (HANYA MUNCUL JIKA TIPE RAPOR DAN TIDAK TANPA KOP) -->
+    <?php if ($tipe_cetak == 'rapor' && $cetak_tanpa_kop != '1'): ?>
+        <header>
+            <?php if (!empty($kop_base64)): ?>
+                <div class="header-img-container">
+                    <img src="<?php echo $kop_base64; ?>" alt="KOP Sekolah">
+                </div>
+            <?php else: ?>
+                <table class="header-table">
+                    <tr>
+                        <td class="logo-left">
+                            <?php if (!empty($base64_kab_pdf)) echo '<img src="' . $base64_kab_pdf . '" alt="Logo Kabupaten" style="width: 80px;">'; ?>
+                        </td>
+                        <td class="kop-text">
+                            <h4>PEMERINTAH KABUPATEN <?php echo strtoupper(htmlspecialchars($sekolah_pdf['kabupaten_kota'] ?? '')); ?></h4>
+                            <p class="dinas-text">DINAS PENDIDIKAN</p>
+                            <h3 class="school-name"><?php echo strtoupper(htmlspecialchars($sekolah_pdf['nama_sekolah'])); ?></h3>
+                            <p class="school-info">
+                                <?php echo htmlspecialchars($sekolah_pdf['jalan'] ?? ''); ?>, Desa/Kel. <?php echo htmlspecialchars($sekolah_pdf['desa_kelurahan'] ?? ''); ?>, Kec. <?php echo htmlspecialchars($sekolah_pdf['kecamatan'] ?? ''); ?><br>
+                                Telp: <?php echo htmlspecialchars($sekolah_pdf['telepon'] ?? '-'); ?> Email: <?php echo htmlspecialchars($sekolah_pdf['email'] ?? '-'); ?>
+                            </p>
+                        </td>
+                        <td class="logo-right">
+                            <?php if (!empty($base64_sekolah_pdf)) echo '<img src="' . $base64_sekolah_pdf . '" alt="Logo Sekolah" style="width: 80px;">'; ?>
+                        </td>
+                    </tr>
+                </table>
+            <?php endif; ?>
+        </header>
+    <?php endif; ?>
 
-    <!-- [PERBAIKAN] KOP DITARUH DI SINI, HANYA SATU KALI, DI LUAR LOOP -->
-    <header>
-        <table class="header-table">
-            <tr>
-                <td class="logo-left">
-                    <?php 
-                        if (!empty($base64_kab_pdf)) {
-                            echo '<img src="' . $base64_kab_pdf . '" alt="Logo Kabupaten" style="width: 80px;">';
-                        }
-                    ?>
-                </td>
-                <td class="kop-text">
-                    <h4>PEMERINTAH KABUPATEN <?php echo strtoupper(htmlspecialchars($sekolah_pdf['kabupaten_kota'] ?? '')); ?></h4>
-                    <p class="dinas-text">DINAS PENDIDIKAN</p>
-                    <h3 class="school-name"><?php echo strtoupper(htmlspecialchars($sekolah_pdf['nama_sekolah'])); ?></h3>
-                    <p class="school-info">
-                        <?php echo htmlspecialchars($sekolah_pdf['jalan'] ?? ''); ?>, Desa/Kel. <?php echo htmlspecialchars($sekolah_pdf['desa_kelurahan'] ?? ''); ?>, Kec. <?php echo htmlspecialchars($sekolah_pdf['kecamatan'] ?? ''); ?><br>
-                        Telp: <?php echo htmlspecialchars($sekolah_pdf['telepon'] ?? '-'); ?> Email: <?php echo htmlspecialchars($sekolah_pdf['email'] ?? '-'); ?>
-                    </p>
-                </td>
-                <td class="logo-right">
-                    <?php 
-                        if (!empty($base64_sekolah_pdf)):
-                            echo '<img src="' . $base64_sekolah_pdf . '" alt="Logo Sekolah" style="width: 80px;">';
-                        endif; 
-                    ?>
-                </td>
-            </tr>
-        </table>
-    </header>
-    <?php endif; // Akhir dari if($tipe_cetak == 'rapor') ?>
-
-
-<?php
-// 3. Loop melalui setiap ID siswa dan generate konten HTML-nya
-$total_ids = count($ids);
-$counter = 0;
-foreach ($ids as $id_siswa) {
-    $counter++;
-    $is_last_page = ($counter == $total_ids); // Variabel untuk file sampul
-    
-    // Bungkus setiap halaman siswa dalam kontainer
-    // Untuk 'rapor', div ini ada di dalam file body
-    if ($tipe_cetak != 'rapor') {
-         echo '<div class="rapor-page-container">';
-    }
-    
-    // Opsi ini hanya relevan untuk 'rapor'
-    $show_nilai_column_pdf = true;
-    
-    // [PERBAIKAN] Mengaktifkan semua include dari folder 'parts/'
-    switch ($tipe_cetak) {
-        case 'sampul':
-            $file_sampul = 'parts/rapor_cover_body.php';
-            if (file_exists($file_sampul)) {
-                include $file_sampul;
-            } else {
-                echo "<h1>Error: File '$file_sampul' tidak ditemukan.</h1>";
-            }
-            break;
-            
-        case 'identitas':
-            $file_identitas = 'parts/rapor_identitas_body.php';
-            if (file_exists($file_identitas)) {
-                include $file_identitas;
-            } else {
-                 echo "<h1>Error: File '$file_identitas' tidak ditemukan.</h1>";
-            }
-            break;
-            
-        case 'rapor':
-            // Khusus untuk rapor utama, kita HANYA mengambil data rapor final
-            $q_rapor = mysqli_prepare($koneksi, "SELECT * FROM rapor WHERE id_siswa = ? AND semester = ? AND id_tahun_ajaran = ? LIMIT 1");
-            mysqli_stmt_bind_param($q_rapor, "iii", $id_siswa, $semester_aktif_pdf, $id_tahun_ajaran_pdf);
-            mysqli_stmt_execute($q_rapor);
-            $rapor_pdf = mysqli_fetch_assoc(mysqli_stmt_get_result($q_rapor));
-            $id_rapor = $rapor_pdf['id_rapor'] ?? 0; 
-            
-            $file_rapor = 'parts/rapor_pdf_body.php';
-            if (file_exists($file_rapor)) {
-                // rapor_pdf_body.php sekarang HANYA berisi <main>
-                include $file_rapor;
-            } else {
-                 echo "<h1>Error: File '$file_rapor' tidak ditemukan.</h1>";
-            }
-            break;
-    }
-
-    if ($tipe_cetak != 'rapor') {
-         echo '</div>'; // Tutup .rapor-page-container
-    }
-
-    // Tambahkan page break, KECUALI untuk siswa yang terakhir di dalam loop
-    if ($counter < $total_ids) {
-        echo '<div class="page-break"></div>';
-    }
-}
-?>
-
-    <?php if ($tipe_cetak == 'rapor'): // Footer hanya untuk rapor ?>
-    <!-- [PERBAIKAN] FOOTER DITARUH DI SINI, HANYA SATU KALI, DI LUAR LOOP -->
+    <!-- GLOBAL FOOTER (HANYA MUNCUL DI RAPOR) -->
+    <?php if ($tipe_cetak == 'rapor'): ?>
     <footer>
         <table class="footer-table">
             <tr>
-                <td class="nama-sekolah"><?php echo htmlspecialchars($sekolah_pdf['nama_sekolah']); ?></td>
-                <!-- [PERBAIKAN] Nama siswa dikosongkan karena berada di luar loop -->
-                <td class="nama-siswa"></td> 
-                <td class="halaman">Halaman <span class="page-number"></span></td>
+                <td class="footer-left">
+                    <?php echo htmlspecialchars($sekolah_pdf['nama_sekolah'] ?? ''); ?>
+                </td>
+                <td class="footer-center">
+                    Rapor Siswa
+                </td>
+                <td class="footer-right">
+                    <span class="page-badge">Hal. <span class="page-number"></span></span>
+                </td>
             </tr>
         </table>
     </footer>
-    <?php endif; // Akhir dari if($tipe_cetak == 'rapor') ?>
+    <?php endif; ?>
+
+    <!-- WATERMARK (HANYA DI RAPOR) -->
+    <?php if (!empty($watermark_base64) && $tipe_cetak == 'rapor'): ?>
+        <div class="watermark">
+            <img src="<?php echo $watermark_base64; ?>" alt="Watermark">
+        </div>
+    <?php endif; ?>
+
+    <!-- ================================================================= -->
+    <!-- LOOPING UTAMA DATA SISWA -->
+    <!-- ================================================================= -->
+    <?php 
+    $counter = 0;
+    $total_siswa = count($ids);
+
+    foreach ($ids as $id_siswa): 
+        $counter++;
+        
+        // Include file body sesuai tipe (DIPERBAIKI KE FOLDER parts/)
+        if ($tipe_cetak == 'sampul') {
+            include 'parts/rapor_cover_body.php';
+        } elseif ($tipe_cetak == 'identitas') {
+            include 'parts/rapor_identitas_body.php';
+        } elseif ($tipe_cetak == 'rapor') {
+            include 'parts/rapor_pdf_body.php';
+        }
+    ?>
+    
+    <!-- PAGE BREAK ANTAR SISWA (Kecuali siswa terakhir) -->
+    <?php if ($counter < $total_siswa): ?>
+        <div class="page-break"></div>
+    <?php endif; ?>
+
+    <?php endforeach; ?>
+    <!-- AKHIR LOOPING -->
 
 </body>
 </html>
 <?php
-// 4. Ambil semua HTML yang sudah digabungkan dari buffer
+// =======================================================================
+// 5. RENDER PDF (DOMPDF)
+// =======================================================================
 $html = ob_get_clean();
 
-// 5. Render gabungan HTML ke satu file PDF menggunakan Dompdf
 $options = new Options();
 $options->set('isRemoteEnabled', true);
-$options->set('chroot', dirname(__FILE__)); // Menggunakan path dari file ini
+$options->set('chroot', dirname(__FILE__)); 
 $options->set('isHtml5ParserEnabled', true);
-$options->set('isPhpEnabled', true); // Diperlukan untuk footer per halaman
+$options->set('isPhpEnabled', false); 
 
 $dompdf = new Dompdf($options);
-
 $dompdf->loadHtml($html);
 
-// ======================================================
-// ### [PERBAIKAN F4 DIMASUKKAN DI SINI] ###
-// ======================================================
-// [MODIFIKASI] Mengkonversi F4 string ke ukuran custom
+// PENGATURAN UKURAN KERTAS (DINAMIS A4 / F4)
 switch ($ukuran_kertas_pdf) {
     case 'F4':
-        // Ukuran F4 dalam mm (215 x 330 mm) dikonversi ke points (1 inch = 25.4 mm, 1 inch = 72 points)
-        $width_pt = (215 / 25.4) * 72;
-        $height_pt = (330 / 25.4) * 72;
-        $ukuran_kertas_pdf = array(0, 0, $width_pt, $height_pt);
+        $width_pt = 215 * 2.83465;
+        $height_pt = 330 * 2.83465;
+        $dompdf->setPaper([0, 0, $width_pt, $height_pt], 'portrait');
+        break;
+    default:
+        $dompdf->setPaper('A4', 'portrait');
         break;
 }
-// ======================================================
-// ### AKHIR PERBAIKAN ###
-// ======================================================
 
-// [MODIFIKASI] Menggunakan Ukuran Kertas dari pengaturan
-$dompdf->setPaper($ukuran_kertas_pdf, 'portrait');
 $dompdf->render();
 
-$filename = "Rapor Massal - " . ucfirst($tipe_cetak) . " - " . date('Y-m-d') . ".pdf";
-$dompdf->stream($filename, ["Attachment" => 0]);
+// Nama File Output
+$filename = "Cetak_Massal_" . ucfirst($tipe_cetak) . "_" . date('Ymd_His') . ".pdf";
+$dompdf->stream($filename, array("Attachment" => 0));
 exit();
 ?>

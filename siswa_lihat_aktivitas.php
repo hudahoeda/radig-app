@@ -1,6 +1,7 @@
 <?php
-include 'header.php';
-include 'koneksi.php';
+// Gunakan include_once agar aman
+include_once 'koneksi.php';
+include_once 'header.php'; // Asumsi header.php memuat Sidebar & Navbar
 
 // Validasi role Siswa
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'siswa') {
@@ -20,15 +21,15 @@ $q_ta_smt = mysqli_query($koneksi, "
 $data_aktif = mysqli_fetch_assoc($q_ta_smt);
 $tahun_ajaran_aktif = $data_aktif['ta_aktif'];
 $semester_aktif = $data_aktif['smt_aktif'];
+$semester_text = ($semester_aktif == 1) ? 'Ganjil' : 'Genap';
 $id_tahun_ajaran_aktif = $data_aktif['id_ta_aktif'];
 
-// --- [FUNGSI BARU] ---
-// Fungsi untuk menghitung rata-rata nilai kualitatif
+// --- [FUNGSI BANTUAN] ---
 function calculate_average_qualitative($scores) {
     if (empty($scores)) return 'N/A';
     
     $map = ['Sangat Baik' => 4, 'Baik' => 3, 'Cukup' => 2, 'Kurang' => 1];
-    $reverse_map = [4 => 'Sangat Baik', 3 => 'Baik', 2 => 'Cukup', 1 => 'Kurang'];
+    $reverse_map = [4 => 'Sangat Berkembang', 3 => 'Berkembang Sesuai Harapan', 2 => 'Mulai Berkembang', 1 => 'Belum Berkembang'];
     
     $total_score = 0;
     $count = 0;
@@ -42,12 +43,10 @@ function calculate_average_qualitative($scores) {
     if ($count == 0) return 'N/A';
     
     $average = round($total_score / $count);
-    
     return $reverse_map[$average] ?? 'N/A';
 }
-// --- [SELESAI FUNGSI BARU] ---
 
-// Query untuk mengambil data projek kokurikuler
+// --- [DATA PROJEK KOKURIKULER] ---
 $query_projek = mysqli_prepare($koneksi, "
     SELECT 
         k.tema_kegiatan, 
@@ -62,7 +61,6 @@ mysqli_stmt_bind_param($query_projek, "iii", $id_siswa, $id_tahun_ajaran_aktif, 
 mysqli_stmt_execute($query_projek);
 $result_projek = mysqli_stmt_get_result($query_projek);
 
-// --- [LOGIKA BARU] Mengelompokkan semua nilai untuk dirata-rata ---
 $projek_raw = [];
 while ($row = mysqli_fetch_assoc($result_projek)) {
     $projek_raw[$row['tema_kegiatan']][$row['nama_dimensi']][] = $row['nilai_kualitatif'];
@@ -77,10 +75,8 @@ foreach($projek_raw as $tema => $dimensi_list) {
         ];
     }
 }
-// --- [SELESAI LOGIKA BARU] ---
 
-
-// Query untuk mengambil data ekstrakurikuler
+// --- [DATA EKSTRAKURIKULER] ---
 $query_ekskul = mysqli_prepare($koneksi, "
     SELECT 
         e.nama_ekskul,
@@ -109,128 +105,279 @@ while ($row = mysqli_fetch_assoc($result_ekskul)) {
 }
 ?>
 
+<!-- Style Modern TEAL THEME (Senada Dashboard) -->
 <style>
-    .page-header { background: linear-gradient(135deg, #667eea, #764ba2); padding: 2.5rem 2rem; border-radius: 0.75rem; color: white; }
-    .page-header h1 { font-weight: 700; }
-
-    .activity-card { border: none; border-radius: 1rem; box-shadow: 0 4px 25px rgba(0,0,0,0.1); overflow: hidden; }
-    .activity-card .card-header { font-weight: 600; font-size: 1.2rem; border-bottom: 2px solid rgba(0,0,0,0.05); }
-    .icon-box { width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; }
+    /* COLORS MATCHING DASHBOARD */
+    :root {
+        --teal-primary: #0d9488;
+        --teal-dark: #065f46;
+        --teal-light: #ccfbf1;
+        --accent-orange: #f97316;
+        --bg-body: #f0fdfa;
+        --card-radius: 20px;
+    }
     
-    .nilai-badge { font-size: 0.9rem; padding: 0.4em 0.8em; }
-    .nilai-sangat-baik { background-color: #d1fae5; color: #065f46; }
-    .nilai-baik { background-color: #dbeafe; color: #1e40af; }
-    .nilai-cukup { background-color: #fef3c7; color: #92400e; }
-    .nilai-kurang { background-color: #fee2e2; color: #991b1b; }
-
-    .ekskul-header {
-        background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
+    body {
+        background-color: var(--bg-body);
+        font-family: 'Inter', sans-serif;
+        color: #0f766e;
+    }
+    
+    /* --- HERO SECTION --- */
+    .page-hero {
+        background: linear-gradient(135deg, var(--teal-dark) 0%, #042f2e 100%);
+        padding: 3.5rem 2rem;
+        border-radius: 0 0 50px 50px;
+        margin-bottom: 3rem;
+        box-shadow: 0 20px 50px -15px rgba(6, 95, 70, 0.7);
+        position: relative;
+        overflow: hidden;
         color: white;
+        border-bottom: 6px solid var(--accent-orange);
+    }
+    
+    .hero-shape {
+        position: absolute; border-radius: 50%; filter: blur(50px); opacity: 0.4; z-index: 1;
+        animation: floatShape 10s infinite alternate;
+    }
+    .shape-1 { width: 300px; height: 300px; background: var(--teal-primary); top: -100px; right: -50px; }
+    .shape-2 { width: 200px; height: 200px; background: var(--accent-orange); bottom: -50px; left: 5%; animation-delay: -5s; }
+    @keyframes floatShape { 0% { transform: translate(0, 0); } 100% { transform: translate(20px, 40px); } }
+
+    .hero-content { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; }
+    
+    .hero-title-box h2 {
+        font-weight: 900; font-size: 2.5rem; text-shadow: 0 4px 15px rgba(0,0,0,0.4); margin-bottom: 0.2rem;
+        background: -webkit-linear-gradient(45deg, #fff, #ccfbf1); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero-title-box p { font-size: 1rem; opacity: 0.9; font-weight: 500; letter-spacing: 0.5px; margin-bottom: 0; }
+
+    .hero-stats { display: flex; gap: 10px; }
+    .stat-badge {
+        background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 10px 20px; border-radius: 20px; text-align: center; min-width: 100px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.2); transition: transform 0.3s;
+    }
+    .stat-badge:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.15); }
+    .stat-value { font-size: 1.2rem; font-weight: 900; display: block; line-height: 1.2; color: #fff; }
+    .stat-label { font-size: 0.65rem; text-transform: uppercase; opacity: 0.8; letter-spacing: 1px; color: #ccfbf1; }
+
+    /* --- CONTENT CARDS --- */
+    .section-title {
+        color: var(--teal-dark); font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1.5rem;
+        display: flex; align-items: center; font-size: 1.25rem;
+    }
+    .section-title i { color: var(--accent-orange); margin-right: 10px; font-size: 1.5rem; }
+
+    .activity-card {
+        background: white; border-radius: 20px; border: 1px solid var(--teal-light);
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; height: 100%;
+        transition: transform 0.3s, box-shadow 0.3s;
+    }
+    .activity-card:hover { transform: translateY(-5px); box-shadow: 0 15px 35px -10px rgba(13, 148, 136, 0.2); }
+
+    /* Project Specific */
+    .project-header {
+        background: var(--teal-light); padding: 1.25rem; border-bottom: 2px solid var(--teal-primary);
+        color: var(--teal-dark); font-weight: 700; display: flex; align-items: center;
+    }
+    .project-icon {
+        width: 45px; height: 45px; background: white; border-radius: 12px; 
+        display: flex; align-items: center; justify-content: center; margin-right: 15px;
+        color: var(--teal-primary); font-size: 1.2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    /* Ekskul Specific */
+    .ekskul-header {
+        background: linear-gradient(135deg, var(--bg-start), var(--bg-end)); padding: 1.25rem;
+        color: white; font-weight: 700; display: flex; align-items: center;
+    }
+    .ekskul-header i { font-size: 1.4rem; margin-right: 12px; }
+    
+    .list-item-custom {
+        padding: 1rem 1.25rem; border-bottom: 1px dashed #e2e8f0; display: flex; justify-content: justify-between; align-items: center;
+    }
+    .list-item-custom:last-child { border-bottom: none; }
+    
+    .badge-nilai { font-size: 0.75rem; padding: 6px 12px; border-radius: 30px; font-weight: 700; }
+    /* Warna Badge Projek */
+    .bg-sb { background: #dcfce7; color: #166534; } /* Sangat Berkembang */
+    .bg-bsh { background: #dbeafe; color: #1e40af; } /* Berkembang Sesuai Harapan */
+    .bg-mb { background: #fef9c3; color: #854d0e; } /* Mulai Berkembang */
+    .bg-bb { background: #fee2e2; color: #991b1b; } /* Belum Berkembang */
+
+    /* Empty State */
+    .empty-state {
+        text-align: center; padding: 4rem 1rem; background: white; border-radius: 20px;
+        border: 2px dashed var(--teal-light); color: #94a3b8;
+    }
+
+    @media (max-width: 991px) {
+        .hero-content { flex-direction: column; text-align: center; gap: 2rem; }
+        .hero-stats { width: 100%; justify-content: center; }
+        .stat-badge { flex: 1; }
+    }
+    @media (max-width: 576px) {
+        .page-hero { padding: 2.5rem 1.5rem; }
+        .hero-title-box h2 { font-size: 1.8rem; }
+        .list-item-custom { flex-direction: column; align-items: flex-start; gap: 8px; }
+        .list-item-custom .badge { align-self: flex-start; }
     }
 </style>
 
-<div class="container-fluid">
-    <div class="page-header text-white mb-4 shadow-lg">
-        <div class="d-sm-flex justify-content-between align-items-center">
-            <div>
-                <h1 class="mb-1">Aktivitasku</h1>
-                <p class="lead mb-0 opacity-75">Rangkuman projek dan ekstrakurikuler semester ini.</p>
-            </div>
-            <a href="dashboard.php" class="btn btn-outline-light mt-3 mt-sm-0"><i class="bi bi-arrow-left me-2"></i>Dashboard</a>
+<div class="page-hero">
+    <div class="hero-shape shape-1"></div>
+    <div class="hero-shape shape-2"></div>
+    <div class="container-fluid hero-content">
+        <div class="hero-title-box">
+            <h2>AKTIVITASKU</h2>
+            <p><i class="bi bi-star-fill me-2 text-warning"></i>Rekap Kokurikuler & Ekstrakurikuler</p>
         </div>
-    </div>
-
-    <div class="row g-4">
-        <!-- Kolom Projek Kokurikuler -->
-        <div class="col-12">
-            <h3 class="mb-3"><i class="bi bi-lightbulb-fill text-warning me-2"></i>Projek Kokurikuler</h3>
-            <?php if (empty($data_projek)): ?>
-                <div class="card activity-card"><div class="card-body text-center p-5 text-muted">Kamu belum mengikuti kegiatan projek semester ini.</div></div>
-            <?php else: ?>
-                <?php foreach ($data_projek as $tema => $capaian): ?>
-                <div class="card activity-card">
-                    <div class="card-header bg-white d-flex align-items-center">
-                        <div class="icon-box me-3" style="background-color: #fdba74;"><i class="bi bi-palette-fill fs-4"></i></div>
-                        <?php echo htmlspecialchars($tema); ?>
-                    </div>
-                    <div class="card-body">
-                        <h6 class="card-subtitle mb-3 text-muted">Nilai Akhir Dimensi yang dikembangkan:</h6>
-                        <div class="list-group list-group-flush">
-                            <?php foreach ($capaian as $item): ?>
-                            <div class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span><i class="bi bi-check-circle-fill text-success me-2"></i><?php echo htmlspecialchars($item['dimensi']); ?></span>
-                                <span class="badge rounded-pill nilai-badge <?php echo 'nilai-' . strtolower(str_replace(' ', '-', $item['nilai'])); ?>">
-                                    <?php echo htmlspecialchars($item['nilai']); ?>
-                                </span>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-
-        <!-- Kolom Ekstrakurikuler -->
-        <div class="col-12">
-            <h3 class="mt-4 mb-3"><i class="bi bi-joystick text-primary me-2"></i>Ekstrakurikuler</h3>
-            <?php if (empty($data_ekskul)): ?>
-                 <div class="card activity-card"><div class="card-body text-center p-5 text-muted">Kamu tidak terdaftar pada kegiatan ekstrakurikuler semester ini.</div></div>
-            <?php else: ?>
-            <div class="row g-4">
-                <?php 
-                $colors = [['#4c6ef5', '#228be6'], ['#f76707', '#fd7e14'], ['#0ca678', '#20c997'], ['#7048e8', '#9775fa']];
-                $icons = ['Pramuka' => 'bi-compass-fill', 'Pencak' => 'bi-universal-access', 'Tari' => 'bi-music-note-beamed', 'Bola' => 'bi-dribbble', 'Volly' => 'bi-dribbble', 'Karawitan' => 'bi-music-player-fill', 'Mengaji' => 'bi-book-half', 'Qiro' => 'bi-book-half'];
-                $i = 0;
-                foreach ($data_ekskul as $nama_ekskul => $detail): 
-                    $color = $colors[$i % count($colors)];
-                    $icon_class = 'bi-star-fill'; // Default icon
-                    foreach ($icons as $key => $icon) {
-                        if (stripos($nama_ekskul, $key) !== false) {
-                            $icon_class = $icon;
-                            break;
-                        }
-                    }
-                ?>
-                <div class="col-md-6">
-                    <div class="card activity-card h-100">
-                        <div class="card-header ekskul-header" style="--bg-start: <?php echo $color[0]; ?>; --bg-end: <?php echo $color[1]; ?>;">
-                            <i class="<?php echo $icon_class; ?> me-2"></i><?php echo htmlspecialchars($nama_ekskul); ?>
-                        </div>
-                        <div class="card-body">
-                            <h6 class="card-subtitle mb-2 text-muted">Kehadiran</h6>
-                            <?php 
-                                $hadir = $detail['kehadiran']['hadir'] ?? 0;
-                                $total = $detail['kehadiran']['total'] ?? 0;
-                                $persentase = $total > 0 ? round(($hadir / $total) * 100) : 0;
-                            ?>
-                            <div class="progress mb-3" style="height: 20px;">
-                                <div class="progress-bar" role="progressbar" style="width: <?php echo $persentase; ?>%; background-color: <?php echo $color[0]; ?>;" aria-valuenow="<?php echo $persentase; ?>">
-                                    <?php echo "$hadir / $total pertemuan"; ?>
-                                </div>
-                            </div>
-                            
-                            <h6 class="card-subtitle mt-4 mb-2 text-muted">Capaian Kamu</h6>
-                            <?php if (empty($detail['penilaian'])): ?>
-                                <p class="text-muted fst-italic">Belum ada penilaian capaian untuk ekskul ini.</p>
-                            <?php else: ?>
-                            <ul class="list-group list-group-flush">
-                                <?php foreach ($detail['penilaian'] as $penilaian): ?>
-                                <li class="list-group-item px-0"><?php echo htmlspecialchars($penilaian['tujuan']); ?>: 
-                                    <strong style="color: <?php echo $color[0]; ?>;"><?php echo htmlspecialchars($penilaian['nilai']); ?></strong>
-                                </li>
-                                <?php endforeach; ?>
-                            </ul>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                <?php $i++; endforeach; ?>
+        <div class="hero-stats">
+            <div class="stat-badge">
+                <span class="stat-value"><?php echo count($data_projek); ?></span>
+                <span class="stat-label">Kokurikuler</span>
             </div>
-            <?php endif; ?>
+            <div class="stat-badge">
+                <span class="stat-value"><?php echo count($data_ekskul); ?></span>
+                <span class="stat-label">Ekstrakurikuler</span>
+            </div>
         </div>
     </div>
 </div>
 
-<?php include 'footer.php'; ?>
+<div class="container-fluid px-4 pb-5">
 
+    <!-- 1. PROJEK KOKURIKULER (P5) -->
+    <div class="row mb-5">
+        <div class="col-12">
+            <h3 class="section-title"><i class="bi bi-lightbulb-fill"></i>KOKURIKULER</h3>
+            
+            <?php if (empty($data_projek)): ?>
+                <div class="empty-state">
+                    <i class="bi bi-inbox-fill fs-1 mb-3 d-block opacity-25"></i>
+                    Belum ada data Kokurikuler untuk semester ini.
+                </div>
+            <?php else: ?>
+                <div class="row g-4">
+                    <?php foreach ($data_projek as $tema => $capaian): ?>
+                    <div class="col-lg-6">
+                        <div class="activity-card">
+                            <div class="project-header">
+                                <div class="project-icon"><i class="bi bi-palette-fill"></i></div>
+                                <div>
+                                    <small class="text-uppercase opacity-75 d-block" style="font-size: 0.7rem; letter-spacing: 1px;">TEMA PROJEK</small>
+                                    <?php echo htmlspecialchars($tema); ?>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="bg-light px-4 py-2 border-bottom">
+                                    <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Capaian Dimensi</small>
+                                </div>
+                                <?php foreach ($capaian as $item): 
+                                    $val = $item['nilai'];
+                                    $bg_cls = 'bg-light text-dark';
+                                    if(strpos($val, 'Sangat') !== false) $bg_cls = 'bg-sb';
+                                    elseif(strpos($val, 'Sesuai') !== false) $bg_cls = 'bg-bsh';
+                                    elseif(strpos($val, 'Mulai') !== false) $bg_cls = 'bg-mb';
+                                    elseif(strpos($val, 'Belum') !== false) $bg_cls = 'bg-bb';
+                                ?>
+                                <div class="list-item-custom">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-check-circle-fill text-teal me-2 opacity-50"></i>
+                                        <span class="fw-medium text-dark"><?php echo htmlspecialchars($item['dimensi']); ?></span>
+                                    </div>
+                                    <span class="badge badge-nilai <?php echo $bg_cls; ?>">
+                                        <?php echo htmlspecialchars($item['nilai']); ?>
+                                    </span>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- 2. EKSTRAKURIKULER -->
+    <div class="row">
+        <div class="col-12">
+            <h3 class="section-title"><i class="bi bi-trophy-fill"></i>EKSTRAKURIKULER</h3>
+            
+            <?php if (empty($data_ekskul)): ?>
+                <div class="empty-state">
+                    <i class="bi bi-joystick fs-1 mb-3 d-block opacity-25"></i>
+                    Kamu tidak terdaftar pada kegiatan ekstrakurikuler semester ini.
+                </div>
+            <?php else: ?>
+                <div class="row g-4">
+                    <?php 
+                    $colors = [['#0d9488', '#115e59'], ['#f97316', '#c2410c'], ['#0ea5e9', '#0369a1'], ['#8b5cf6', '#6d28d9']];
+                    $icons = ['Pramuka' => 'bi-compass', 'Pencak' => 'bi-shield-shaded', 'Tari' => 'bi-music-note-beamed', 'Bola' => 'bi-dribbble', 'Volly' => 'bi-circle', 'Komputer' => 'bi-laptop', 'Musik' => 'bi-music-player'];
+                    $i = 0;
+                    foreach ($data_ekskul as $nama_ekskul => $detail): 
+                        $color = $colors[$i % count($colors)];
+                        $icon_class = 'bi-star-fill';
+                        foreach ($icons as $key => $icon) {
+                            if (stripos($nama_ekskul, $key) !== false) { $icon_class = $icon; break; }
+                        }
+                    ?>
+                    <div class="col-lg-6">
+                        <div class="activity-card">
+                            <div class="ekskul-header" style="--bg-start: <?php echo $color[0]; ?>; --bg-end: <?php echo $color[1]; ?>;">
+                                <i class="<?php echo $icon_class; ?>"></i>
+                                <?php echo htmlspecialchars($nama_ekskul); ?>
+                            </div>
+                            <div class="card-body p-4">
+                                <!-- Kehadiran -->
+                                <div class="mb-4">
+                                    <div class="d-flex justify-content-between align-items-end mb-1">
+                                        <small class="text-uppercase fw-bold text-muted" style="font-size: 0.75rem;">Kehadiran</small>
+                                        <?php 
+                                            $hadir = $detail['kehadiran']['hadir'] ?? 0;
+                                            $total = $detail['kehadiran']['total'] ?? 0;
+                                            $persentase = $total > 0 ? round(($hadir / $total) * 100) : 0;
+                                        ?>
+                                        <span class="fw-bold" style="color: <?php echo $color[0]; ?>"><?php echo $persentase; ?>%</span>
+                                    </div>
+                                    <div class="progress" style="height: 10px; border-radius: 10px; background: #f1f5f9;">
+                                        <div class="progress-bar" role="progressbar" style="width: <?php echo $persentase; ?>%; background-color: <?php echo $color[0]; ?>; border-radius: 10px;"></div>
+                                    </div>
+                                    <small class="text-muted mt-1 d-block" style="font-size: 0.75rem;">
+                                        Hadir <b><?php echo $hadir; ?></b> dari <?php echo $total; ?> pertemuan
+                                    </small>
+                                </div>
+                                
+                                <!-- Penilaian -->
+                                <div>
+                                    <small class="text-uppercase fw-bold text-muted mb-2 d-block" style="font-size: 0.75rem;">Catatan Capaian</small>
+                                    <?php if (empty($detail['penilaian'])): ?>
+                                        <p class="text-muted fst-italic small">Belum ada penilaian.</p>
+                                    <?php else: ?>
+                                        <div class="d-flex flex-column gap-2">
+                                            <?php foreach ($detail['penilaian'] as $penilaian): ?>
+                                            <div class="d-flex align-items-start bg-light p-2 rounded-3 border">
+                                                <i class="bi bi-bookmark-fill me-2 mt-1" style="color: <?php echo $color[0]; ?>; font-size: 0.8rem;"></i>
+                                                <div>
+                                                    <div class="fw-bold text-dark" style="font-size: 0.85rem; line-height: 1.3;"><?php echo htmlspecialchars($penilaian['nilai']); ?></div>
+                                                    <div class="text-muted small" style="font-size: 0.8rem;"><?php echo htmlspecialchars($penilaian['tujuan']); ?></div>
+                                                </div>
+                                            </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <?php $i++; endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+</div>
+
+<?php include 'footer.php'; ?>

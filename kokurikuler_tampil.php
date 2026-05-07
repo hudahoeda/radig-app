@@ -8,8 +8,7 @@ if ($_SESSION['role'] != 'admin') {
     exit;
 }
 
-// === OPTIMASI PERFORMA (LANGKAH 1): Ambil semua kegiatan dalam satu query ===
-// <-- DIMODIFIKASI: Menambah JOIN ke tabel guru untuk ambil nama koordinator -->
+// === 1. Ambil Data Kegiatan Utama ===
 $query_kegiatan = "SELECT k.id_kegiatan, k.semester, k.tema_kegiatan, k.bentuk_kegiatan, ta.tahun_ajaran, 
                           g.nama_guru AS nama_koordinator
                    FROM kokurikuler_kegiatan k
@@ -28,7 +27,7 @@ if ($result_kegiatan) {
     }
 }
 
-// === OPTIMASI PERFORMA (LANGKAH 2): Ambil semua dimensi dalam satu query ===
+// === 2. Ambil Data Dimensi (Batch Query) ===
 $dimensi_per_kegiatan = [];
 if (!empty($kegiatan_ids)) {
     $id_list = implode(',', $kegiatan_ids);
@@ -38,7 +37,23 @@ if (!empty($kegiatan_ids)) {
     }
 }
 
-// Kelompokkan data kegiatan per semester untuk ditampilkan
+// === 3. [BARU] Ambil Data Kelas Terlibat (Batch Query) ===
+$kelas_per_kegiatan = [];
+if (!empty($kegiatan_ids)) {
+    $id_list = implode(',', $kegiatan_ids);
+    $query_kelas = mysqli_query($koneksi, "
+        SELECT kkt.id_kegiatan, k.nama_kelas 
+        FROM kokurikuler_kelas_terlibat kkt
+        JOIN kelas k ON kkt.id_kelas = k.id_kelas
+        WHERE kkt.id_kegiatan IN ($id_list)
+        ORDER BY k.nama_kelas ASC
+    ");
+    while($kls = mysqli_fetch_assoc($query_kelas)){
+        $kelas_per_kegiatan[$kls['id_kegiatan']][] = $kls['nama_kelas'];
+    }
+}
+
+// Kelompokkan per semester
 $kegiatan_per_semester = [1 => [], 2 => []];
 foreach ($kegiatan_data as $kegiatan) {
     $kegiatan_per_semester[$kegiatan['semester']][] = $kegiatan;
@@ -52,12 +67,17 @@ foreach ($kegiatan_data as $kegiatan) {
     .semester-heading { font-weight: 600; color: var(--secondary-color); padding-bottom: 0.5rem; border-bottom: 2px solid var(--secondary-color); margin-bottom: 1.5rem; display: inline-block; }
     .project-card { transition: all 0.2s ease-in-out; border: 1px solid var(--border-color); border-left: 5px solid var(--primary-color); }
     .project-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
-    /* Style badge yang lebih modern dan konsisten */
     .dimension-badge {
         background-color: var(--bs-primary-bg-subtle) !important;
         color: var(--bs-primary-text-emphasis) !important;
         border: 1px solid var(--bs-primary-border-subtle);
         font-weight: 500;
+    }
+    .kelas-badge {
+        background-color: #e9ecef;
+        color: #495057;
+        font-size: 0.85em;
+        margin-right: 2px;
     }
 </style>
 
@@ -92,12 +112,30 @@ foreach ($kegiatan_data as $kegiatan) {
                                     <h5 class="card-title fw-bold text-primary"><?php echo htmlspecialchars($kegiatan['tema_kegiatan']); ?></h5>
                                     <span class="badge bg-secondary flex-shrink-0"><?php echo htmlspecialchars($kegiatan['bentuk_kegiatan']); ?></span>
                                 </div>
-                                <!-- <-- TAMBAHAN: Menampilkan Koordinator -->
-                                <p class="small text-muted mb-2">
+                                
+                                <p class="small text-muted mb-1">
                                     Koordinator: <strong><?php echo htmlspecialchars($kegiatan['nama_koordinator'] ?? 'Belum Ditentukan'); ?></strong>
                                 </p>
+
+                                <!-- [BARU] Tampilkan Daftar Kelas -->
+                                <div class="mb-3">
+                                    <p class="small text-muted mb-1 fw-bold">Kelas Sasaran:</p>
+                                    <div>
+                                        <?php 
+                                        $kelas_list = $kelas_per_kegiatan[$kegiatan['id_kegiatan']] ?? [];
+                                        if (empty($kelas_list)) {
+                                            echo '<span class="text-danger small"><i class="bi bi-exclamation-circle"></i> Belum ada kelas.</span>';
+                                        } else {
+                                            foreach ($kelas_list as $nama_kelas) {
+                                                echo '<span class="badge rounded-pill kelas-badge">' . htmlspecialchars($nama_kelas) . '</span>';
+                                            }
+                                        }
+                                        ?>
+                                    </div>
+                                </div>
+
                                 <hr class="my-2">
-                                <p class="mb-2 small text-muted fw-bold">Dimensi Profil yang Ditargetkan:</p>
+                                <p class="mb-2 small text-muted fw-bold">Dimensi Profil:</p>
                                 <div class="d-flex flex-wrap flex-grow-1" style="gap: 0.5rem;">
                                     <?php 
                                     $dimensi_list = $dimensi_per_kegiatan[$kegiatan['id_kegiatan']] ?? [];
@@ -112,7 +150,6 @@ foreach ($kegiatan_data as $kegiatan) {
                                 </div>
                             </div>
                             <div class="card-footer bg-light text-end">
-                                <!-- <-- TAMBAHAN: Tombol Kelola Tim -->
                                 <a href="kokurikuler_kelola_tim.php?id=<?php echo $kegiatan['id_kegiatan']; ?>" class="btn btn-outline-primary btn-sm" data-bs-toggle="tooltip" title="Kelola Tim Penilai"><i class="bi bi-people-fill"></i></a>
                                 <a href="kokurikuler_edit.php?id=<?php echo $kegiatan['id_kegiatan']; ?>" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Edit Kegiatan"><i class="bi bi-pencil-fill"></i></a>
                                 <a href="#" onclick="hapusKegiatan(<?php echo $kegiatan['id_kegiatan']; ?>)" class="btn btn-outline-danger btn-sm" data-bs-toggle="tooltip" title="Hapus Kegiatan"><i class="bi bi-trash-fill"></i></a>
@@ -151,7 +188,6 @@ function hapusKegiatan(id) {
 
 <?php
 if (isset($_SESSION['pesan'])) {
-    // <-- DIMODIFIKASI: Menyesuaikan dengan format JSON
     $pesan_data = json_decode($_SESSION['pesan'], true);
     if (is_array($pesan_data)) {
         echo "<script>Swal.fire(" . json_encode($pesan_data) . ");</script>";
