@@ -30,7 +30,7 @@ if (!$kelas) {
 $id_kelas = $kelas['id_kelas'];
 $action = $_POST['action'] ?? 'show_list';
 
-// Fungsi bantu untuk memproses data kokurikuler (tidak berubah)
+// Fungsi bantu untuk memproses data kokurikuler
 function prosesDataKokurikulerSiswaRataRata($koneksi, $id_siswa, $id_tahun_ajaran_aktif, $semester_aktif) {
     $query_asesmen = mysqli_prepare($koneksi, "
         SELECT kk.tema_kegiatan, ktd.nama_dimensi, ka.nilai_kualitatif, g.nama_guru
@@ -62,6 +62,7 @@ function prosesDataKokurikulerSiswaRataRata($koneksi, $id_siswa, $id_tahun_ajara
             if ($rata_rata_skor > 3.5) $nilai_akhir_kualitatif = 'Sangat Baik';
             elseif ($rata_rata_skor > 2.5) $nilai_akhir_kualitatif = 'Baik';
             elseif ($rata_rata_skor > 1.5) $nilai_akhir_kualitatif = 'Cukup';
+            
             $hasil_akhir_per_kegiatan[$tema][$nama_dimensi] = ['detail_penilaian' => $penilaian, 'nilai_akhir' => $nilai_akhir_kualitatif];
             $nilai_akhir_untuk_deskripsi[$tema][$nama_dimensi] = $nilai_akhir_kualitatif;
         }
@@ -85,23 +86,61 @@ function prosesDataKokurikulerSiswaRataRata($koneksi, $id_siswa, $id_tahun_ajara
     return ['rangkuman' => $hasil_akhir_per_kegiatan, 'deskripsi' => $deskripsi];
 }
 
-// Logika penyimpanan akhir (tidak berubah)
+// Logika penyimpanan akhir (Telah Dioptimasi)
 if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (empty($_POST['deskripsi'])) { $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Gagal', 'text' => 'Tidak ada data deskripsi untuk disimpan.']); header("Location: walikelas_proses_kokurikuler.php"); exit; }
-    $deskripsi_siswa = $_POST['deskripsi']; $total_berhasil = 0;
+    if (empty($_POST['deskripsi'])) { 
+        $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Gagal', 'text' => 'Tidak ada data deskripsi untuk disimpan.']); 
+        header("Location: walikelas_proses_kokurikuler.php"); 
+        exit; 
+    }
+    
+    $deskripsi_siswa = $_POST['deskripsi']; 
+    $total_berhasil = 0;
+    
     mysqli_begin_transaction($koneksi);
     try {
+        // [PERBAIKAN PERFORMA] Prepare diluar loop agar tidak memberatkan memory database
         $stmt_update_rapor = mysqli_prepare($koneksi, "UPDATE rapor SET deskripsi_kokurikuler = ? WHERE id_rapor = ?");
+        $q_cek_rapor = mysqli_prepare($koneksi, "SELECT id_rapor FROM rapor WHERE id_siswa = ? AND id_tahun_ajaran = ? AND semester = ?");
+        // [PERBAIKAN] Tambah kolom status 'Draft'
+        $q_insert_rapor = mysqli_prepare($koneksi, "INSERT INTO rapor (id_siswa, id_kelas, id_tahun_ajaran, semester, status) VALUES (?, ?, ?, ?, 'Draft')");
+
         foreach ($deskripsi_siswa as $id_siswa => $deskripsi) {
-            $q_cek_rapor = mysqli_prepare($koneksi, "SELECT id_rapor FROM rapor WHERE id_siswa = ? AND id_tahun_ajaran = ? AND semester = ?");
-            mysqli_stmt_bind_param($q_cek_rapor, "iii", $id_siswa, $id_tahun_ajaran_aktif, $semester_aktif); mysqli_stmt_execute($q_cek_rapor);
-            $data_rapor = mysqli_fetch_assoc(mysqli_stmt_get_result($q_cek_rapor)); $id_rapor = $data_rapor ? $data_rapor['id_rapor'] : null;
-            if (!$id_rapor) { $q_insert_rapor = mysqli_prepare($koneksi, "INSERT INTO rapor (id_siswa, id_kelas, id_tahun_ajaran, semester) VALUES (?, ?, ?, ?)"); mysqli_stmt_bind_param($q_insert_rapor, "iiii", $id_siswa, $id_kelas, $id_tahun_ajaran_aktif, $semester_aktif); mysqli_stmt_execute($q_insert_rapor); $id_rapor = mysqli_insert_id($koneksi); }
-            mysqli_stmt_bind_param($stmt_update_rapor, "si", $deskripsi, $id_rapor); mysqli_stmt_execute($stmt_update_rapor); $total_berhasil++;
+            
+            // Cek Rapor Exists
+            mysqli_stmt_bind_param($q_cek_rapor, "iii", $id_siswa, $id_tahun_ajaran_aktif, $semester_aktif); 
+            mysqli_stmt_execute($q_cek_rapor);
+            $res_cek = mysqli_stmt_get_result($q_cek_rapor);
+            $data_rapor = mysqli_fetch_assoc($res_cek); 
+            $id_rapor = $data_rapor ? $data_rapor['id_rapor'] : null;
+            mysqli_free_result($res_cek); // Bebaskan memori result set
+
+            // Buat Rapor jika belum ada
+            if (!$id_rapor) { 
+                mysqli_stmt_bind_param($q_insert_rapor, "iiii", $id_siswa, $id_kelas, $id_tahun_ajaran_aktif, $semester_aktif); 
+                mysqli_stmt_execute($q_insert_rapor); 
+                $id_rapor = mysqli_insert_id($koneksi); 
+            }
+            
+            // Simpan Deskripsi
+            mysqli_stmt_bind_param($stmt_update_rapor, "si", $deskripsi, $id_rapor); 
+            mysqli_stmt_execute($stmt_update_rapor); 
+            $total_berhasil++;
         }
-        mysqli_commit($koneksi); $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => "Deskripsi untuk {$total_berhasil} siswa disimpan."]);
-    } catch (Exception $e) { mysqli_rollback($koneksi); $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Error: ' . $e->getMessage()]); }
-    header("Location: walikelas_proses_kokurikuler.php"); exit;
+        
+        mysqli_stmt_close($q_cek_rapor);
+        mysqli_stmt_close($q_insert_rapor);
+        mysqli_stmt_close($stmt_update_rapor);
+
+        mysqli_commit($koneksi); 
+        $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => "Deskripsi untuk {$total_berhasil} siswa disimpan."]);
+    } catch (Exception $e) { 
+        mysqli_rollback($koneksi); 
+        $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Error: ' . $e->getMessage()]); 
+    }
+    
+    header("Location: walikelas_proses_kokurikuler.php"); 
+    exit;
 }
 ?>
 
@@ -175,11 +214,16 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php foreach ($siswa_preview as $index => $siswa):
             $id_siswa = $siswa['id_siswa'];
             echo '<input type="hidden" name="id_siswa[]" value="'.$id_siswa.'">'; // Kirim ulang id siswa untuk proses simpan
+            
             $hasil_proses = prosesDataKokurikulerSiswaRataRata($koneksi, $id_siswa, $id_tahun_ajaran_aktif, $semester_aktif);
             $rangkuman_data = $hasil_proses['rangkuman'];
             $deskripsi_draf = $hasil_proses['deskripsi'];
+            
+            // [PERBAIKAN PHP 8] Ambil data rapor dengan aman tanpa warning offset null
             $q_rapor_exist = mysqli_query($koneksi, "SELECT deskripsi_kokurikuler FROM rapor WHERE id_siswa=$id_siswa AND id_tahun_ajaran=$id_tahun_ajaran_aktif AND semester=$semester_aktif");
-            $deskripsi_tersimpan = mysqli_fetch_assoc($q_rapor_exist)['deskripsi_kokurikuler'] ?? '';
+            $row_rapor = mysqli_fetch_assoc($q_rapor_exist);
+            $deskripsi_tersimpan = $row_rapor ? ($row_rapor['deskripsi_kokurikuler'] ?? '') : '';
+            
             $deskripsi_final = !empty($deskripsi_tersimpan) ? $deskripsi_tersimpan : $deskripsi_draf;
         ?>
             <div class="accordion-item">
@@ -202,14 +246,14 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ?>
                                         <div class="p-2 border rounded mb-2 bg-white">
                                             <div class="d-flex justify-content-between align-items-center">
-                                                <strong><?php echo $nama_dimensi; ?></strong>
+                                                <strong><?php echo htmlspecialchars($nama_dimensi); ?></strong>
                                                 <span class="badge bg-<?php echo $badge_color; ?>">Akhir: <?php echo $detail['nilai_akhir']; ?></span>
                                             </div>
                                             <hr class="my-1">
                                             <div class="d-flex flex-wrap" style="gap: 3px;">
                                             <small class="text-muted me-2">Penilai:</small>
                                             <?php foreach($detail['detail_penilaian'] as $p): ?>
-                                                <span class="badge bg-secondary" title="<?php echo htmlspecialchars($p['guru']); ?>"><?php echo explode(' ', $p['guru'])[0] . ' ('.$p['nilai'].')'; ?></span>
+                                                <span class="badge bg-secondary" title="<?php echo htmlspecialchars($p['guru']); ?>"><?php echo htmlspecialchars(explode(' ', $p['guru'])[0]) . ' ('.$p['nilai'].')'; ?></span>
                                             <?php endforeach; ?>
                                             </div>
                                         </div>
@@ -248,9 +292,14 @@ if(document.getElementById('pilihSemua')) {
 
 <?php
 if(isset($_SESSION['pesan'])){ 
-    $pesan_data = json_decode($_SESSION['pesan'], true);
-    if ($pesan_data) {
+    $pesan_raw = $_SESSION['pesan'];
+    $pesan_data = json_decode($pesan_raw, true);
+    
+    // [PERBAIKAN UX] Mencegah SweetAlert error jika string pesan bukan format JSON (dari file aksi lain)
+    if (json_last_error() === JSON_ERROR_NONE && is_array($pesan_data)) {
         echo "<script>Swal.fire({icon: '".($pesan_data['icon'] ?? 'info')."', title: '".($pesan_data['title'] ?? 'Info')."', text: '".($pesan_data['text'] ?? '')."'});</script>";
+    } else {
+        echo "<script>Swal.fire({icon: 'info', title: 'Informasi', text: '".addslashes($pesan_raw)."'});</script>";
     }
     unset($_SESSION['pesan']);
 } 

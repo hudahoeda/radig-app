@@ -42,6 +42,11 @@ $penugasan_by_mapel = [];
     
     /* --- CSS BARU: Style untuk Fitur Katrol & Toggle Modern --- */
     .kolom-katrol { display: none; background-color: #fff3cd !important; width: 100px; }
+    /* Menghilangkan panah atas bawah (spinbutton) pada input number untuk UI yang lebih bersih */
+    .input-katrol::-webkit-outer-spin-button,
+    .input-katrol::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .input-katrol[type=number] { -moz-appearance: textfield; }
+    
     .input-katrol { width: 100%; text-align: center; border: 1px solid #ffc107; border-radius: 8px; padding: 6px; font-weight: 800; color: #856404; transition: all 0.3s; }
     .input-katrol:focus { outline: none; border-color: #d39e00; box-shadow: 0 0 8px rgba(255, 193, 7, 0.5); transform: scale(1.05); }
     .badge-katrol-aktif { border: 2px solid #ffc107; color: #000; background-color: #fff3cd !important; box-shadow: 0 0 10px rgba(255, 193, 7, 0.6); }
@@ -842,6 +847,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if(inputKatrols.length > 0) {
         inputKatrols.forEach(input => {
+            
+            // --- PERBAIKAN BUG MOUSE SCROLL ---
+            // Mencegah nilai berubah saat user menscroll mouse di atas input
+            input.addEventListener('wheel', function(e) {
+                this.blur(); 
+            });
+
             // Event saat mengetik/berubah
             input.addEventListener('input', function() {
                 const idSiswa = this.dataset.idsiswa;

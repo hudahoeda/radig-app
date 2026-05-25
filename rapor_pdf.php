@@ -29,7 +29,7 @@ if ($id_siswa == 0) {
 }
 
 // =======================================================================
-// [PERBAIKAN] FUNGSI TANGGAL INDONESIA
+// FUNGSI TANGGAL INDONESIA
 // =======================================================================
 function tanggal_indo($tanggal) {
     if(empty($tanggal) || $tanggal == '0000-00-00') return "-";
@@ -66,7 +66,7 @@ while($row_pdf = mysqli_fetch_assoc($query_pengaturan_pdf)){
     $pengaturan_pdf[$row_pdf['nama_pengaturan']] = $row_pdf['nilai_pengaturan'];
 }
 
-// [FITUR BARU] Mode Tanpa KOP & Margin
+// Mode Tanpa KOP & Margin
 $cetak_tanpa_kop = $pengaturan_pdf['cetak_tanpa_kop'] ?? '0';
 
 // Handle Margin: Pastikan format angka benar (ganti koma jadi titik)
@@ -88,135 +88,13 @@ $tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'] ?? '-';
 $semester_aktif_pdf = $pengaturan_pdf['semester_aktif'] ?? 1;
 $semester_text_pdf = ($semester_aktif_pdf == 1) ? '1 (Ganjil)' : '2 (Genap)';
 
-// [PERBAIKAN] Implementasi Tanggal Indo
+// Implementasi Tanggal Indo
 $tanggal_rapor_db = $pengaturan_pdf['tanggal_rapor'] ?? date("Y-m-d");
 $tanggal_rapor_pdf = tanggal_indo($tanggal_rapor_db);
 
 // Ambil Data Sekolah
 $q_sekolah_pdf = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
 $sekolah_pdf = mysqli_fetch_assoc($q_sekolah_pdf);
-
-// =======================================================================
-// FUNGSI HITUNG DESKRIPSI OTOMATIS (LIVE CALCULATION)
-// =======================================================================
-function hitungDeskripsiOtomatis($koneksi, $id_siswa, $id_kelas, $id_mapel, $kkm, $semester_aktif) {
-    
-    // 1. Ambil Nilai Sumatif Lingkup Materi (TP)
-    $stmt_sumatif_tp = mysqli_prepare($koneksi, "
-        SELECT p.nama_penilaian, p.subjenis_penilaian, pdn.nilai, p.bobot_penilaian, GROUP_CONCAT(tp.deskripsi_tp SEPARATOR '|||') as deskripsi_tps
-        FROM penilaian_detail_nilai pdn
-        JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian 
-        JOIN penilaian_tp ptp ON p.id_penilaian = ptp.id_penilaian
-        JOIN tujuan_pembelajaran tp ON ptp.id_tp = tp.id_tp 
-        WHERE p.subjenis_penilaian = 'Sumatif TP' 
-        AND pdn.id_siswa = ? AND p.id_mapel = ? AND p.id_kelas = ? AND p.semester = ? 
-        GROUP BY p.id_penilaian, pdn.nilai, p.bobot_penilaian
-    ");
-    
-    // 2. Ambil Nilai Sumatif Akhir
-    $stmt_sumatif_akhir = mysqli_prepare($koneksi, "
-        SELECT p.nama_penilaian, p.subjenis_penilaian, pdn.nilai, p.bobot_penilaian 
-        FROM penilaian_detail_nilai pdn
-        JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian 
-        WHERE p.subjenis_penilaian IN ('Sumatif Akhir Semester', 'Sumatif Akhir Tahun')
-        AND p.jenis_penilaian = 'Sumatif' 
-        AND pdn.id_siswa = ? AND p.id_mapel = ? AND p.id_kelas = ? AND p.semester = ?
-    ");
-    
-    $skor_per_tp = []; 
-    $total_nilai_x_bobot = 0; 
-    $total_bobot = 0;
-
-    // Eksekusi Query Sumatif TP
-    mysqli_stmt_bind_param($stmt_sumatif_tp, "iiii", $id_siswa, $id_mapel, $id_kelas, $semester_aktif);
-    mysqli_stmt_execute($stmt_sumatif_tp);
-    $result_sumatif_tp = mysqli_stmt_get_result($stmt_sumatif_tp);
-    
-    while ($d_nilai = mysqli_fetch_assoc($result_sumatif_tp)) {
-        $tps_individu = explode('|||', $d_nilai['deskripsi_tps']);
-        foreach($tps_individu as $desc_tp) {
-            if (!isset($skor_per_tp[$desc_tp])) { $skor_per_tp[$desc_tp] = []; }
-            $skor_per_tp[$desc_tp][] = $d_nilai['nilai'];
-        }
-        $total_nilai_x_bobot += $d_nilai['nilai'] * $d_nilai['bobot_penilaian'];
-        $total_bobot += $d_nilai['bobot_penilaian'];
-    }
-
-    // Eksekusi Query Sumatif Akhir
-    mysqli_stmt_bind_param($stmt_sumatif_akhir, "iiii", $id_siswa, $id_mapel, $id_kelas, $semester_aktif);
-    mysqli_stmt_execute($stmt_sumatif_akhir);
-    $result_sumatif_akhir = mysqli_stmt_get_result($stmt_sumatif_akhir);
-    
-    while ($d_nilai_akhir = mysqli_fetch_assoc($result_sumatif_akhir)) {
-        $total_nilai_x_bobot += $d_nilai_akhir['nilai'] * $d_nilai_akhir['bobot_penilaian'];
-        $total_bobot += $d_nilai_akhir['bobot_penilaian'];
-    }
-
-    // Hitung Nilai Akhir
-    $nilai_akhir = ($total_bobot > 0) ? round($total_nilai_x_bobot / $total_bobot) : null;
-    
-    // LOGIKA DESKRIPSI
-    $deskripsi_final = '';
-    
-    if ($nilai_akhir !== null && !empty($skor_per_tp)) {
-        $rekap_tp = [];
-        $kata_hapus = ['Peserta didik dapat', 'Peserta didik mampu', 'peserta didik mampu', 'siswa dapat', 'siswa mampu', 'mampu', 'memahami', 'menguasai', 'menjelaskan', 'menganalisis', 'mengidentifikasi', 'menentukan', 'menunjukkan'];
-
-        foreach ($skor_per_tp as $deskripsi => $skor_array) {
-            $avg = array_sum($skor_array) / count($skor_array);
-            
-            $desc_clean = trim(str_ireplace($kata_hapus, '', $deskripsi));
-            $desc_clean = preg_replace('/\s+/', ' ', $desc_clean);
-            $desc_clean = lcfirst($desc_clean);
-
-            if (!isset($rekap_tp[$desc_clean]) || $rekap_tp[$desc_clean]['avg'] < $avg) {
-                 $rekap_tp[$desc_clean] = ['avg' => $avg];
-            }
-        }
-
-        $tp_lulus = [];
-        $tp_remedi = [];
-
-        foreach ($rekap_tp as $clean_desc => $data) {
-            if ($data['avg'] >= $kkm) {
-                $tp_lulus[$clean_desc] = $data['avg'];
-            } else {
-                $tp_remedi[$clean_desc] = $data['avg'];
-            }
-        }
-
-        arsort($tp_lulus); 
-        asort($tp_remedi); 
-
-        $top_tp = array_slice(array_keys($tp_lulus), 0, 2);
-        $bottom_tp = array_slice(array_keys($tp_remedi), 0, 2); 
-        
-        $deskripsi_draf = "";
-        
-        if (!empty($top_tp)) {
-            $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
-        } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
-            $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
-        }
-        
-        if (!empty($bottom_tp)) {
-            $deskripsi_draf .= "Namun, perlu penguatan lebih lanjut dalam " . implode(', ', $bottom_tp) . ".";
-        } else {
-            $deskripsi_draf .= "Semua tujuan pembelajaran telah tercapai dengan baik.";
-        }
-
-        $deskripsi_final = ucfirst(trim($deskripsi_draf));
-        
-    } elseif ($nilai_akhir !== null && $nilai_akhir >= $kkm) {
-        $deskripsi_final = 'Capaian kompetensi secara umum sudah menunjukkan ketuntasan yang baik.';
-    } elseif ($nilai_akhir !== null && $nilai_akhir < $kkm) {
-        $deskripsi_final = 'Perlu ditingkatkan lagi pada beberapa tujuan pembelajaran untuk mencapai ketuntasan minimum.';
-    } else {
-        $deskripsi_final = '-';
-    }
-
-    return $deskripsi_final;
-}
 
 // =======================================================================
 // 3. KONFIGURASI TAMPILAN (WARNA & UKURAN)
@@ -272,11 +150,9 @@ if (!empty($watermark_filename_pdf)) {
     }
 }
 
-// B. KOP Sekolah (LOGIKA DIPERBAIKI)
-// Cek setting apakah gambar KOP aktif
+// B. KOP Sekolah 
 $tampil_kop_img = ($pengaturan_pdf['rapor_tampil_kop'] ?? '0') == '1';
 
-// [PERBAIKAN] Cek di dua tempat: kop_sekolah (baru) ATAU file_kop_sekolah (lama)
 $file_kop = '';
 if (!empty($pengaturan_pdf['kop_sekolah'])) {
     $file_kop = $pengaturan_pdf['kop_sekolah'];
@@ -356,12 +232,6 @@ $show_nilai_column_pdf = true;
 // =======================================================================
 // 6. LOGIKA PENGAMBILAN MATA PELAJARAN (FILTER AGAMA & KELAS)
 // =======================================================================
-// [PERBAIKAN] Sekarang MENGGUNAKAN LOGIKA DINAMIS
-// Tidak ada lagi hardcode ID Mapel (Islam => 2, dll)
-
-// 1. Ambil semua mapel yang terindikasi sebagai Agama (dari kelompok atau nama)
-// Karena kita sudah menambahkan kolom 'kelompok', kita prioritaskan itu.
-// Tapi fallback ke 'nama_mapel' jika kolom kelompok belum terisi dengan benar.
 $q_mapel_agama_all = mysqli_query($koneksi, "
     SELECT id_mapel, nama_mapel 
     FROM mata_pelajaran 
@@ -375,24 +245,15 @@ $agama_siswa_clean = strtolower(trim($siswa_pdf['agama'] ?? ''));
 while ($row_agama = mysqli_fetch_assoc($q_mapel_agama_all)) {
     $ids_semua_mapel_agama[] = $row_agama['id_mapel'];
     
-    // Cek kecocokan nama mapel dengan agama siswa
-    // Contoh: Siswa 'Islam' cocok dengan 'Pendidikan Agama Islam'
-    // Contoh: Siswa 'Kristen' cocok dengan 'Pendidikan Agama Kristen'
     $nama_mapel_kecil = strtolower($row_agama['nama_mapel']);
-    
     if (!empty($agama_siswa_clean) && strpos($nama_mapel_kecil, $agama_siswa_clean) !== false) {
         $id_mapel_agama_siswa_pdf = $row_agama['id_mapel'];
     }
 }
 
-// Ubah array ID ke string untuk query IN (...)
 $semua_id_mapel_agama_string_pdf = implode(',', $ids_semua_mapel_agama);
 if (empty($semua_id_mapel_agama_string_pdf)) { $semua_id_mapel_agama_string_pdf = '0'; }
 
-// Query Utama: Ambil Mapel yang diajarkan di kelas ini
-// Filter:
-// Tampilkan mapel jika BUKAN mapel agama (NOT IN list agama)
-// ATAU jika mapel tersebut adalah mapel agama milik siswa ini
 $query_mapel_string_pdf = "
     SELECT mp.id_mapel, mp.nama_mapel, mp.urutan 
     FROM mata_pelajaran AS mp
@@ -401,18 +262,17 @@ $query_mapel_string_pdf = "
 ";
 
 if ($id_mapel_agama_siswa_pdf > 0) {
-    // Siswa punya agama yang terdeteksi di mapel -> Tampilkan mapel agamanya, sembunyikan agama lain
     $query_mapel_string_pdf .= " AND (mp.id_mapel NOT IN ($semua_id_mapel_agama_string_pdf) OR mp.id_mapel = $id_mapel_agama_siswa_pdf)";
 } else {
-    // Siswa tidak punya agama yang cocok di mapel (atau agama kosong) -> Sembunyikan SEMUA mapel agama
-    // Ini mencegah siswa Islam melihat mapel Hindu jika sistem gagal mendeteksi
     $query_mapel_string_pdf .= " AND mp.id_mapel NOT IN ($semua_id_mapel_agama_string_pdf)";
 }
 
 $query_mapel_string_pdf .= " GROUP BY mp.id_mapel ORDER BY mp.urutan ASC, mp.nama_mapel ASC";
-
 $semua_mapel_query_pdf = mysqli_query($koneksi, $query_mapel_string_pdf);
 
+// =======================================================================
+// [CORE FIX] PENGAMBILAN DATA DARI TABEL RAPOR (MENGEMBALIKAN FUNGSI GENERATE)
+// =======================================================================
 $daftar_mapel_rapor_pdf = [];
 $nilai_tersimpan_pdf = [];
 
@@ -420,13 +280,10 @@ if ($id_rapor > 0) {
     $detail_akademik_query_pdf = mysqli_query($koneksi, "SELECT id_mapel, nilai_akhir, nilai_katrol, capaian_kompetensi FROM rapor_detail_akademik WHERE id_rapor = $id_rapor");
     if ($detail_akademik_query_pdf) {
         while ($d_pdf = mysqli_fetch_assoc($detail_akademik_query_pdf)) {
-            $nilai_cetak = $d_pdf['nilai_akhir'];
-            if (($d_pdf['nilai_katrol'] ?? 0) !== 0 && ($d_pdf['nilai_katrol'] ?? 0) > 0) {
-                $nilai_cetak = $d_pdf['nilai_katrol'];
-            }
             $nilai_tersimpan_pdf[$d_pdf['id_mapel']] = [
-                'nilai_akhir' => $nilai_cetak,
-                'capaian_kompetensi_db' => $d_pdf['capaian_kompetensi'] 
+                'asli' => isset($d_pdf['nilai_akhir']) ? (float)$d_pdf['nilai_akhir'] : 0,
+                'katrol' => isset($d_pdf['nilai_katrol']) ? (float)$d_pdf['nilai_katrol'] : 0,
+                'capaian_kompetensi' => $d_pdf['capaian_kompetensi'] ?? '-'
             ];
         }
     }
@@ -436,22 +293,28 @@ if ($semua_mapel_query_pdf) {
     while ($mapel_pdf = mysqli_fetch_assoc($semua_mapel_query_pdf)) {
         $id_mapel_pdf = $mapel_pdf['id_mapel'];
         
-        // Panggil fungsi hitungDeskripsiOtomatis untuk mendapatkan deskripsi LIVE
-        $deskripsi_live = hitungDeskripsiOtomatis($koneksi, $id_siswa, $id_kelas_siswa, $id_mapel_pdf, $kkm, $semester_aktif_pdf);
+        $asli = 0;
+        $katrol = 0;
+        $deskripsi = '-';
 
+        // Ambil data mutlak dari tabel rapor (Wajib Generate Rapor agar muncul)
         if (isset($nilai_tersimpan_pdf[$id_mapel_pdf])) {
-            $daftar_mapel_rapor_pdf[] = [
-                'nama_mapel' => $mapel_pdf['nama_mapel'], 
-                'nilai_akhir' => $nilai_tersimpan_pdf[$id_mapel_pdf]['nilai_akhir'], 
-                'capaian_kompetensi' => $deskripsi_live
-            ];
-        } else {
-            $daftar_mapel_rapor_pdf[] = [
-                'nama_mapel' => $mapel_pdf['nama_mapel'], 
-                'nilai_akhir' => '-', 
-                'capaian_kompetensi' => '-'
-            ];
+            $asli = $nilai_tersimpan_pdf[$id_mapel_pdf]['asli'];
+            $katrol = $nilai_tersimpan_pdf[$id_mapel_pdf]['katrol'];
+            $deskripsi = $nilai_tersimpan_pdf[$id_mapel_pdf]['capaian_kompetensi'];
         }
+
+        // Penentuan Nilai Final: Pilih yang tertinggi
+        $nilai_final = $asli;
+        if ($katrol > $asli) {
+            $nilai_final = $katrol;
+        }
+
+        $daftar_mapel_rapor_pdf[] = [
+            'nama_mapel' => $mapel_pdf['nama_mapel'], 
+            'nilai_akhir' => ($nilai_final > 0) ? $nilai_final : '-', 
+            'capaian_kompetensi' => $deskripsi
+        ];
     }
 }
 
@@ -810,7 +673,7 @@ ob_start();
                 endforeach;
                 if (empty($filtered_mapel_rapor_pdf)) {
                     $colspan_pdf = $show_nilai_column_pdf ? 4 : 3;
-                    echo "<tr><td colspan='$colspan_pdf' class='text-center'>Data nilai akademik belum tersedia atau belum ada mapel yang diatur untuk kelas ini.</td></tr>";
+                    echo "<tr><td colspan='$colspan_pdf' class='text-center'>Data nilai akademik belum tersedia atau rapor belum di-Generate untuk semester ini.</td></tr>";
                 }
                 ?>
             </tbody>
@@ -822,7 +685,7 @@ ob_start();
             <table class="content-table" style="margin-top: 0;">
                 <tbody>
                     <tr>
-                        <td class="capaian"><?php echo !empty($rapor_pdf['deskripsi_kokurikuler']) ? nl2br(htmlspecialchars($rapor_pdf['deskripsi_kokurikuler'] ?? '-')) : '-'; ?></td>
+                        <td class="capaian"><?php echo !empty($rapor_pdf['deskripsi_kokurikuler']) ? nl2br(htmlspecialchars($rapor_pdf['deskripsi_kokurikuler'])) : '-'; ?></td>
                     </tr>
                 </tbody>
             </table>

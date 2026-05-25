@@ -63,10 +63,11 @@ switch ($skema_warna) {
 }
 
 // Data Kelas & Tahun Ajaran
-$q_kelas = mysqli_query($koneksi, "SELECT k.nama_kelas, ta.tahun_ajaran FROM kelas k JOIN tahun_ajaran ta ON k.id_tahun_ajaran = ta.id_tahun_ajaran WHERE k.id_kelas=$id_kelas");
+$q_kelas = mysqli_query($koneksi, "SELECT k.nama_kelas, ta.id_tahun_ajaran, ta.tahun_ajaran FROM kelas k JOIN tahun_ajaran ta ON k.id_tahun_ajaran = ta.id_tahun_ajaran WHERE k.id_kelas=$id_kelas");
 $data_kelas = mysqli_fetch_assoc($q_kelas);
 $nama_kelas = $data_kelas['nama_kelas'] ?? 'N/A';
 $tahun_ajaran = $data_kelas['tahun_ajaran'] ?? 'N/A';
+$id_tahun_ajaran_aktif = $data_kelas['id_tahun_ajaran'] ?? 0;
 
 // Data Sekolah
 $q_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
@@ -80,9 +81,16 @@ $walikelas = mysqli_fetch_assoc($q_walikelas) ?? ['nama_guru' => 'Belum Ditentuk
 $q_kkm = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'kkm' LIMIT 1");
 $kkm = mysqli_fetch_assoc($q_kkm)['nilai_pengaturan'] ?? 75;
 
+// Ambil semester aktif
+$q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
+$semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'] ?? 1;
+
 // Data Siswa (Hanya Aktif)
 $result_siswa = mysqli_query($koneksi, "SELECT id_siswa, nis, nama_lengkap FROM siswa WHERE id_kelas=$id_kelas AND status_siswa='Aktif' ORDER BY nama_lengkap ASC");
-$daftar_siswa = mysqli_fetch_all($result_siswa, MYSQLI_ASSOC);
+$daftar_siswa = [];
+while ($row_s = mysqli_fetch_assoc($result_siswa)) {
+    $daftar_siswa[] = $row_s;
+}
 
 // Helper Gambar
 function get_img_base64_local($path) {
@@ -119,10 +127,13 @@ if ($tampil_kop_img && !empty($pengaturan['file_kop_sekolah'])) {
 
 
 // =================================================================
-// 3. LOGIKA MAPEL & NILAI
+// 3. LOGIKA MAPEL
 // =================================================================
 $result_mapel = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel, kode_mapel FROM mata_pelajaran ORDER BY urutan ASC");
-$mapel_db = mysqli_fetch_all($result_mapel, MYSQLI_ASSOC);
+$mapel_db = [];
+while ($row_m = mysqli_fetch_assoc($result_mapel)) {
+    $mapel_db[] = $row_m;
+}
 
 $header_mapel = []; 
 $id_agama = [];     
@@ -152,43 +163,86 @@ foreach ($mapel_db as $m) {
     }
 }
 
-// Ambil Nilai
+// =================================================================
+// 4. PENGAMBILAN NILAI (SMART FALLBACK UNTUK PDF)
+// =================================================================
+
+// TAHAP A: AMBIL NILAI DINAMIS DARI BANK NILAI
+$q_sumatif = "
+    SELECT pdn.id_siswa, p.id_mapel, 
+           SUM(pdn.nilai * p.bobot_penilaian) / NULLIF(SUM(p.bobot_penilaian), 0) as rata_sumatif
+    FROM penilaian_detail_nilai pdn
+    JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian
+    WHERE p.id_kelas = $id_kelas AND p.semester = $semester_aktif AND p.jenis_penilaian = 'Sumatif'
+    GROUP BY pdn.id_siswa, p.id_mapel
+";
+$res_sum = mysqli_query($koneksi, $q_sumatif);
+$bank_nilai = [];
+if ($res_sum) {
+    while($rs = mysqli_fetch_assoc($res_sum)) {
+        if ($rs['rata_sumatif'] !== null) {
+            $bank_nilai[$rs['id_siswa']][$rs['id_mapel']] = round($rs['rata_sumatif']);
+        }
+    }
+}
+
+// TAHAP B: AMBIL NILAI TERSIMPAN DARI TABEL RAPOR
 $q_nilai = "SELECT rda.nilai_akhir, rda.nilai_katrol, r.id_siswa, rda.id_mapel 
             FROM rapor_detail_akademik rda 
             JOIN rapor r ON rda.id_rapor = r.id_rapor 
             WHERE r.id_kelas = $id_kelas 
+            AND r.semester = $semester_aktif
             AND r.id_tahun_ajaran = (SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status='Aktif')";
 $result_nilai = mysqli_query($koneksi, $q_nilai);
-
-$data_nilai = [];
-
+$rapor_db = [];
 while ($row = mysqli_fetch_assoc($result_nilai)) {
-    $sid = $row['id_siswa'];
-    $mid = (string)$row['id_mapel'];
-    
-    $nilai_asli = isset($row['nilai_akhir']) ? (int)$row['nilai_akhir'] : 0;
-    $raw_katrol = $row['nilai_katrol'];
-    $nilai_katrol = ($raw_katrol !== null && $raw_katrol !== '') ? (int)$raw_katrol : 0;
+    $rapor_db[$row['id_siswa']][$row['id_mapel']] = [
+        'akhir' => isset($row['nilai_akhir']) ? (float)$row['nilai_akhir'] : 0,
+        'katrol' => isset($row['nilai_katrol']) ? (float)$row['nilai_katrol'] : 0
+    ];
+}
 
-    if ($nilai_katrol > 0) {
-        $nilai_final = $nilai_katrol;
-        $is_katrol = true;
-    } else {
-        $nilai_final = $nilai_asli;
-        $is_katrol = false;
-    }
+// TAHAP C: GABUNGKAN DATA (Prioritas: Katrol > Rapor > Bank Nilai)
+$data_nilai = [];
+foreach ($daftar_siswa as $siswa) {
+    $sid = $siswa['id_siswa'];
+    foreach ($mapel_db as $m) {
+        $mid = $m['id_mapel'];
+        
+        $key_mapel = $mid;
+        if (in_array($mid, $id_agama)) $key_mapel = 'PABD';
+        if (in_array($mid, $id_sbdp)) $key_mapel = 'SBdP';
 
-    $key_mapel = $mid;
-    if (in_array($mid, $id_agama)) $key_mapel = 'PABD';
-    if (in_array($mid, $id_sbdp)) $key_mapel = 'SBdP';
+        $asli = 0;
+        $katrol = 0;
 
-    if ($key_mapel == 'SBdP') {
-        $data_nilai[$sid][$key_mapel][] = $nilai_final;
-    } else {
-        $data_nilai[$sid][$key_mapel] = [
-            'nilai' => $nilai_final,
-            'katrol' => $is_katrol
-        ];
+        // Cek apakah sudah ada di Rapor DB
+        if (isset($rapor_db[$sid][$mid])) {
+            $katrol = $rapor_db[$sid][$mid]['katrol'];
+            $asli = $rapor_db[$sid][$mid]['akhir'];
+        }
+
+        // SMART FALLBACK: Jika Asli masih 0 (belum digenerate), ambil dari hitungan Bank Nilai
+        if ($asli == 0 && isset($bank_nilai[$sid][$mid])) {
+            $asli = $bank_nilai[$sid][$mid];
+        }
+
+        if ($asli == 0 && $katrol == 0) continue;
+
+        $final = ($katrol > $asli) ? $katrol : $asli;
+        $is_katrol = ($katrol > $asli);
+
+        if ($key_mapel == 'SBdP') {
+            $data_nilai[$sid][$key_mapel]['asli'][] = $asli;
+            $data_nilai[$sid][$key_mapel]['katrol'][] = $katrol;
+            $data_nilai[$sid][$key_mapel]['final'][] = $final;
+        } else {
+            // Untuk PDF, yang ditampilkan cuma nilai Final yang terpilih
+            $data_nilai[$sid][$key_mapel] = [
+                'nilai' => $final,
+                'katrol' => $is_katrol
+            ];
+        }
     }
 }
 
@@ -200,18 +254,27 @@ foreach ($daftar_siswa as $k => $siswa) {
     $total_nilai = 0;
     $jumlah_mapel = 0;
 
-    // Rata-rata SBdP
-    if (isset($data_nilai[$sid]['SBdP']) && is_array($data_nilai[$sid]['SBdP'])) {
-        $arr_sbdp = $data_nilai[$sid]['SBdP'];
-        if (count($arr_sbdp) > 0) {
-            $avg_sbdp = round(array_sum($arr_sbdp) / count($arr_sbdp));
-            $data_nilai[$sid]['SBdP'] = ['nilai' => $avg_sbdp, 'katrol' => false];
-        } else {
-            $data_nilai[$sid]['SBdP'] = ['nilai' => 0, 'katrol' => false];
-        }
+    // Kalkulasi Rata-rata SBdP
+    if (isset($data_nilai[$sid]['SBdP']['final']) && is_array($data_nilai[$sid]['SBdP']['final'])) {
+        $arr_asli = array_filter($data_nilai[$sid]['SBdP']['asli'], function($v) { return $v > 0; });
+        $arr_katrol = array_filter($data_nilai[$sid]['SBdP']['katrol'], function($v) { return $v > 0; });
+        $arr_final = array_filter($data_nilai[$sid]['SBdP']['final'], function($v) { return $v > 0; });
+        
+        $avg_asli = (count($arr_asli) > 0) ? round(array_sum($arr_asli) / count($arr_asli)) : 0;
+        $avg_katrol = (count($arr_katrol) > 0) ? round(array_sum($arr_katrol) / count($arr_katrol)) : 0;
+        $avg_final = (count($arr_final) > 0) ? round(array_sum($arr_final) / count($arr_final)) : 0;
+        
+        $is_katrol_sbdp = ($avg_final > $avg_asli);
+
+        $data_nilai[$sid]['SBdP'] = [
+            'nilai' => $avg_final,
+            'katrol' => $is_katrol_sbdp
+        ];
+    } else {
+        $data_nilai[$sid]['SBdP'] = ['nilai' => 0, 'katrol' => false];
     }
 
-    // Hitung Total
+    // Hitung Total (Berdasarkan Nilai Final/Rapor)
     foreach ($header_mapel as $hm) {
         $data = $data_nilai[$sid][$hm['id']] ?? ['nilai' => 0];
         $val = $data['nilai'];
@@ -237,7 +300,6 @@ $sorted_daftar_siswa = [];
 
 foreach ($rekap_siswa as $sid => $total) {
     $rank_map[$sid] = $rank++;
-    // Cari data siswa asli berdasarkan ID dan masukkan ke array baru yang terurut
     foreach ($daftar_siswa as $ds) {
         if ($ds['id_siswa'] == $sid) {
             $sorted_daftar_siswa[] = $ds;
@@ -245,7 +307,7 @@ foreach ($rekap_siswa as $sid => $total) {
         }
     }
 }
-// Tambahkan siswa yang mungkin tidak punya nilai (nilai 0) di akhir
+// Tambahkan siswa yang mungkin tidak punya nilai di akhir
 foreach ($daftar_siswa as $ds) {
     if (!isset($rekap_siswa[$ds['id_siswa']])) {
         $sorted_daftar_siswa[] = $ds;
@@ -373,7 +435,7 @@ ob_start();
 
     <div class="title-block">
         <h4>LEGER NILAI AKHIR - KELAS <?php echo strtoupper($nama_kelas); ?></h4>
-        <span>Tahun Ajaran: <?php echo $tahun_ajaran; ?></span>
+        <span>Tahun Ajaran: <?php echo $tahun_ajaran; ?> | Semester: <?php echo $semester_aktif; ?></span>
     </div>
 
     <table class="leger-table">
@@ -400,7 +462,6 @@ ob_start();
             <tr>
                 <td><?php echo $no++; ?></td>
                 <td><?php echo $siswa['nis']; ?></td>
-                <!-- [PERMINTAAN] NAMA HURUF BESAR -->
                 <td class="nama"><?php echo strtoupper($siswa['nama_lengkap']); ?></td>
                 
                 <?php foreach ($header_mapel as $hm): ?>
@@ -483,5 +544,5 @@ if (isset($pengaturan['rapor_ukuran_kertas']) && $pengaturan['rapor_ukuran_kerta
 }
 
 $dompdf->render();
-$dompdf->stream("Leger_Kelas_" . preg_replace('/[^A-Za-z0-9_\-]/', '_', $nama_kelas) . ".pdf", array("Attachment" => 0));
+$dompdf->stream("Leger_Smt" . $semester_aktif . "_Kelas_" . preg_replace('/[^A-Za-z0-9_\-]/', '_', $nama_kelas) . ".pdf", array("Attachment" => 0));
 ?>

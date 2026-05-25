@@ -22,6 +22,11 @@ if ($id_kelas == 0 || $id_mapel == 0) {
     die("Error: Informasi Kelas atau Mata Pelajaran tidak lengkap.");
 }
 
+// --- [PERBAIKAN] 1. Ambil informasi semester aktif saat ini ---
+$q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
+$semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'] ?? 1;
+// --------------------------------------------------------------
+
 // Ambil data info kelas dan mapel
 $q_info = mysqli_query($koneksi, "SELECT k.nama_kelas, m.nama_mapel FROM kelas k, mata_pelajaran m WHERE k.id_kelas = $id_kelas AND m.id_mapel = $id_mapel");
 $info = mysqli_fetch_assoc($q_info);
@@ -35,8 +40,9 @@ while ($s = mysqli_fetch_assoc($q_siswa)) {
     $daftar_siswa[] = $s;
 }
 
-// 2. Ambil daftar penilaian
-$q_penilaian = mysqli_query($koneksi, "SELECT id_penilaian, nama_penilaian, jenis_penilaian FROM penilaian WHERE id_kelas = $id_kelas AND id_mapel = $id_mapel AND id_guru = $id_guru ORDER BY jenis_penilaian, tanggal_penilaian, id_penilaian");
+// 2. Ambil daftar penilaian 
+// --- [PERBAIKAN] 2. Tambahkan "AND semester = $semester_aktif" agar nilai semester lalu tidak ikut ditarik ---
+$q_penilaian = mysqli_query($koneksi, "SELECT id_penilaian, nama_penilaian, jenis_penilaian FROM penilaian WHERE id_kelas = $id_kelas AND id_mapel = $id_mapel AND id_guru = $id_guru AND semester = $semester_aktif ORDER BY jenis_penilaian, tanggal_penilaian, id_penilaian");
 $daftar_penilaian = [];
 $daftar_id_penilaian = [];
 while ($p = mysqli_fetch_assoc($q_penilaian)) {
