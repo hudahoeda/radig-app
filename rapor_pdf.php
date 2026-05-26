@@ -358,16 +358,16 @@ if ($seni_data && $prakarya_data) {
     $deskripsi_gabungan = trim($seni_data['capaian_kompetensi']) . "\n" . trim($prakarya_data['capaian_kompetensi']);
     
     $combined_data = [
-        'nama_mapel' => 'Seni Budaya dan Prakarya',
+        'nama_mapel' => 'Seni Rupa',
         'nilai_akhir' => $nilai_rata_rata,
         'capaian_kompetensi' => trim($deskripsi_gabungan)
     ];
 
 } elseif ($seni_data) {
-    $seni_data['nama_mapel'] = 'Seni Budaya dan Prakarya';
+    $seni_data['nama_mapel'] = 'Seni Rupa';
     $combined_data = $seni_data;
 } elseif ($prakarya_data) {
-    $prakarya_data['nama_mapel'] = 'Seni Budaya dan Prakarya';
+    $prakarya_data['nama_mapel'] = 'Seni Rupa';
     $combined_data = $prakarya_data;
 }
 

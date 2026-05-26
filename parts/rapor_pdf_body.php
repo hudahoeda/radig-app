@@ -236,16 +236,16 @@ if ($seni_data && $prakarya_data) {
     $merged_desc = trim($seni_data['capaian_kompetensi']) . "\n" . trim($prakarya_data['capaian_kompetensi']);
     
     $daftar_mapel_rapor[$seni_idx] = [
-        'nama_mapel' => 'Seni Budaya dan Prakarya',
+        'nama_mapel' => 'Seni Rupa',
         'nilai_akhir' => ($avg > 0 ? $avg : '-'),
         'capaian_kompetensi' => trim($merged_desc)
     ];
     unset($daftar_mapel_rapor[$prakarya_idx]); // Hapus Prakarya
     $daftar_mapel_rapor = array_values($daftar_mapel_rapor); // Re-index
 } elseif ($seni_data) {
-    $daftar_mapel_rapor[$seni_idx]['nama_mapel'] = 'Seni Budaya dan Prakarya';
+    $daftar_mapel_rapor[$seni_idx]['nama_mapel'] = 'Seni Rupa';
 } elseif ($prakarya_data) {
-    $daftar_mapel_rapor[$prakarya_idx]['nama_mapel'] = 'Seni Budaya dan Prakarya';
+    $daftar_mapel_rapor[$prakarya_idx]['nama_mapel'] = 'Seni Rupa';
 }
 
 // 6. EKSKUL (QUERY LENGKAP)
