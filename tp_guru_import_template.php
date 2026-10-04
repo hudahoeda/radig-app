@@ -46,12 +46,14 @@ $sheet->setCellValue('A1', 'KODE_TP (Opsional)');
 $sheet->setCellValue('B1', 'DESKRIPSI_TUJUAN_PEMBELAJARAN (Wajib)');
 $sheet->setCellValue('C1', 'SEMESTER (Wajib: 1 atau 2)');
 $sheet->setCellValue('D1', 'NAMA_MATA_PELAJARAN (Wajib)');
+$sheet->setCellValue('E1', 'KKTP (Opsional, default 75)');
 
 // Atur lebar kolom
 $sheet->getColumnDimension('A')->setWidth(20);
 $sheet->getColumnDimension('B')->setWidth(80);
 $sheet->getColumnDimension('C')->setWidth(25);
 $sheet->getColumnDimension('D')->setWidth(40);
+$sheet->getColumnDimension('E')->setWidth(30);
 
 // Buat dropdown untuk Mata Pelajaran
 if (!empty($mapel_list)) {
@@ -96,9 +98,12 @@ $instructionSheet->setCellValue('B5', 'Pilih semester dari dropdown, yaitu 1 unt
 $instructionSheet->setCellValue('A6', 'NAMA_MATA_PELAJARAN');
 $instructionSheet->setCellValue('B6', 'Pilih mata pelajaran yang sesuai dari dropdown. Daftar ini berisi mapel yang Anda ampu di tahun ajaran aktif. Kolom ini wajib diisi.');
 
+$instructionSheet->setCellValue('A7', 'KKTP');
+$instructionSheet->setCellValue('B7', 'Kolom E diisi dengan nilai KKTP berupa bilangan bulat positif. Kolom ini opsional; jika kosong atau tidak valid, nilai 75 digunakan. Template lama tanpa kolom E tetap dapat diimpor.');
+
 $instructionSheet->getColumnDimension('A')->setWidth(30);
 $instructionSheet->getColumnDimension('B')->setWidth(80);
-$instructionSheet->getStyle('A3:A6')->getFont()->setBold(true);
+$instructionSheet->getStyle('A3:A7')->getFont()->setBold(true);
 
 // Set sheet aktif ke sheet pertama
 $spreadsheet->setActiveSheetIndex(0);

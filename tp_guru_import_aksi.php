@@ -61,29 +61,31 @@ try {
     mysqli_begin_transaction($koneksi);
 
     // Siapkan statement insert
-    $query_insert = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    $query_insert = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran, kktp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     $stmt_insert = mysqli_prepare($koneksi, $query_insert);
     
     // Loop mulai dari baris 2 (baris 1 adalah header)
     for ($row = 2; $row <= $highestRow; $row++) {
-        $kode_tp = $sheet->getCell('A' . $row)->getValue();
-        $deskripsi_tp = trim($sheet->getCell('B' . $row)->getValue());
-        $semester = trim($sheet->getCell('C' . $row)->getValue());
+        $kode_tp_val = $sheet->getCell('A' . $row)->getValue();
+        $deskripsi_tp_val = trim($sheet->getCell('B' . $row)->getValue());
+        $semester_val = trim($sheet->getCell('C' . $row)->getValue());
         $nama_mapel = trim($sheet->getCell('D' . $row)->getValue());
+        $kktp = $sheet->getCell('E' . $row)->getValue();
+        $kktp = (is_numeric($kktp) && $kktp > 0) ? (int)$kktp : 75;
 
         // Validasi: Lewati baris kosong
-        if (empty($deskripsi_tp) && empty($nama_mapel)) {
+        if (empty($deskripsi_tp_val) && empty($nama_mapel)) {
             continue;
         }
 
         // Validasi data per baris
-        if (empty($deskripsi_tp) || empty($semester) || empty($nama_mapel)) {
+        if (empty($deskripsi_tp_val) || empty($semester_val) || empty($nama_mapel)) {
             $gagal_disimpan++;
             $pesan_error[] = "Baris {$row}: Data tidak lengkap (Deskripsi, Semester, dan Mata Pelajaran wajib diisi).";
             continue;
         }
 
-        if (!in_array($semester, [1, 2])) {
+        if (!in_array($semester_val, [1, 2])) {
             $gagal_disimpan++;
             $pesan_error[] = "Baris {$row}: Semester harus diisi dengan angka 1 atau 2.";
             continue;
@@ -98,7 +100,7 @@ try {
         $id_mapel = $mapel_map[$nama_mapel];
         
         // Bind parameter dan eksekusi
-        mysqli_stmt_bind_param($stmt_insert, "iisssii", $id_mapel, $id_guru, $fase, $kode_tp, $deskripsi_tp, $semester, $id_tahun_ajaran_aktif);
+        mysqli_stmt_bind_param($stmt_insert, "iisssiii", $id_mapel, $id_guru, $fase, $kode_tp_val, $deskripsi_tp_val, $semester_val, $id_tahun_ajaran_aktif, $kktp);
         
         if (mysqli_stmt_execute($stmt_insert)) {
             $berhasil_disimpan++;

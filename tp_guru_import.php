@@ -106,7 +106,7 @@ if ($_SESSION['role'] != 'guru') {
                 <div class="step-item">
                     <div class="step-number">2</div>
                     <h4>Isi Data Sesuai Petunjuk</h4>
-                    <p class="text-muted">Buka file template menggunakan aplikasi spreadsheet (seperti Microsoft Excel atau Google Sheets), lalu isi data Tujuan Pembelajaran Anda pada baris-baris yang tersedia.</p>
+                    <p class="text-muted">Buka file template menggunakan aplikasi spreadsheet (seperti Microsoft Excel atau Google Sheets), lalu isi data Tujuan Pembelajaran Anda pada baris-baris yang tersedia. Kolom E (KKTP) bersifat opsional dan menggunakan nilai 75 jika kosong atau tidak valid. Template lama tanpa kolom E tetap dapat digunakan.</p>
                 </div>
 
                 <div class="step-item">
