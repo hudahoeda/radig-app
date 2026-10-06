@@ -104,12 +104,12 @@ foreach ($semua_mapel_ajar as $mapel) {
         $filter_agama = "AND agama = 'Hindu'";
     } elseif (strpos($nama_mapel_lower, 'buddha') !== false || strpos($nama_mapel_lower, 'budha') !== false) {
         $filter_agama = "AND (agama = 'Buddha' OR agama = 'Budha')";
-    } elseif (strpos($nama_mapel_lower, 'khonghucu') !== false) {
-        $filter_agama = "AND agama = 'Khonghucu'";
+    } elseif (strpos($nama_mapel_lower, 'khonghucu') !== false || strpos($nama_mapel_lower, 'konghucu') !== false) {
+        $filter_agama = "AND (agama = 'Khonghucu' OR agama = 'Konghucu')";
     }
 
     // 1. Hitung Jumlah Siswa Target (Sesuai Agama jika Mapel Agama)
-    $q_s = mysqli_query($koneksi, "SELECT COUNT(*) as t FROM siswa WHERE id_kelas=$id_k AND status_siswa='Aktif' $filter_agama");
+    $q_s = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as t FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas=$id_k OR r.id_kelas=$id_k) $filter_agama");
     $j_s = mysqli_fetch_assoc($q_s)['t'];
     
     // 2. Hitung Asesmen Sumatif yg dibuat Guru untuk Mapel & Kelas ini
@@ -195,8 +195,8 @@ $batas_absen = 10;
 
 if ($is_walas) {
     // Jumlah siswa
-    $query_siswa_walas = mysqli_prepare($koneksi, "SELECT COUNT(id_siswa) as total_siswa FROM siswa WHERE id_kelas = ? AND status_siswa = 'Aktif'");
-    mysqli_stmt_bind_param($query_siswa_walas, "i", $id_kelas_wali);
+    $query_siswa_walas = mysqli_prepare($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as total_siswa FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = ? OR r.id_kelas = ?)");
+    mysqli_stmt_bind_param($query_siswa_walas, "ii", $id_kelas_wali, $id_kelas_wali);
     mysqli_stmt_execute($query_siswa_walas);
     $jumlah_siswa_walas = mysqli_fetch_assoc(mysqli_stmt_get_result($query_siswa_walas))['total_siswa'] ?? 0;
     mysqli_stmt_close($query_siswa_walas);

@@ -1,3 +1,7 @@
 koneksi.php
 .env
 *.dmp
+
+# Runtime files and database backups stay local.
+error_log
+backups/

@@ -114,7 +114,7 @@ if ($id_kegiatan_pilih > 0 && !empty($id_kelas_pilih)) {
 
     // B. Ambil Siswa
     $safe_id_kelas = mysqli_real_escape_string($koneksi, $id_kelas_pilih);
-    $q_sis = mysqli_query($koneksi, "SELECT * FROM siswa WHERE id_kelas = '$safe_id_kelas' AND status_siswa = 'Aktif'");
+    $q_sis = mysqli_query($koneksi, "SELECT DISTINCT s.* FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = '$safe_id_kelas' OR r.id_kelas = '$safe_id_kelas')");
     
     if ($q_sis) {
         while ($row = mysqli_fetch_assoc($q_sis)) {
@@ -141,7 +141,7 @@ if ($id_kegiatan_pilih > 0 && !empty($id_kelas_pilih)) {
         $q_nilai = "SELECT id_target, id_siswa, nilai_kualitatif, catatan_guru 
                     FROM kokurikuler_asesmen 
                     WHERE id_target IN ($str_target) 
-                    AND id_siswa IN (SELECT id_siswa FROM siswa WHERE id_kelas = '$safe_id_kelas')";
+                    AND id_siswa IN (SELECT DISTINCT s.id_siswa FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE s.id_kelas = '$safe_id_kelas' OR r.id_kelas = '$safe_id_kelas')";
         
         $res_nilai = mysqli_query($koneksi, $q_nilai);
         if ($res_nilai) {

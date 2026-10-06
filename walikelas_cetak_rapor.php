@@ -161,8 +161,12 @@ if ($id_kelas > 0) {
                     </div>
                     
                     <!-- Form tersembunyi untuk submit -->
-                    <form id="form-finalisasi" action="walikelas_aksi.php?aksi=finalisasi_semua" method="POST" class="d-none"></form>
-                    <form id="form-batal" action="walikelas_aksi.php?aksi=batalkan_finalisasi_semua" method="POST" class="d-none"></form>
+                    <form id="form-finalisasi" action="walikelas_aksi.php" method="POST" class="d-none">
+                        <input type="hidden" name="action" value="simpan_rpr">
+                    </form>
+                    <form id="form-batal" action="walikelas_aksi.php" method="POST" class="d-none">
+                        <input type="hidden" name="action" value="batal_rpr">
+                    </form>
                 </div>
 
                 <div class="col-lg-6 border-start d-flex flex-column">
@@ -176,8 +180,11 @@ if ($id_kelas > 0) {
                         <button type="button" class="btn btn-outline-secondary text-start" onclick="prosesCetakMassal('identitas')">
                             <i class="bi bi-person-badge me-2"></i>2. Cetak Lembar Identitas Siswa (Terpilih)
                         </button>
+                        <button type="button" class="btn btn-outline-info text-start" onclick="prosesCetakMassal('rapor_pts')" style="margin-bottom: 0.5rem;">
+                            <i class="bi bi-calendar-event me-2"></i>3. Cetak Rapor PTS (Terpilih)
+                        </button>
                         <button type="button" class="btn btn-success text-start" onclick="prosesCetakMassal('rapor')">
-                            <i class="bi bi-file-earmark-pdf-fill me-2"></i>3. Cetak Rapor Akademik (Terpilih)
+                            <i class="bi bi-file-earmark-pdf-fill me-2"></i>4. Cetak Rapor Akademik (Terpilih)
                         </button>
                     </div>
                 </div>
@@ -198,6 +205,7 @@ if ($id_kelas > 0) {
                             <th>Status Rapor</th>
                             <th>Cetak Sampul<br><input type="checkbox" class="form-check-input mt-1" onclick="toggleAll(this, 'sampul')"></th>
                             <th>Cetak Identitas<br><input type="checkbox" class="form-check-input mt-1" onclick="toggleAll(this, 'identitas')"></th>
+                            <th>Cetak PTS<br><input type="checkbox" class="form-check-input mt-1" onclick="toggleAll(this, 'rapor_pts')"></th>
                             <th>Cetak Rapor<br><input type="checkbox" class="form-check-input mt-1" onclick="toggleAll(this, 'rapor')"></th>
                             <th>Aksi Individu</th>
                         </tr>
@@ -220,6 +228,7 @@ if ($id_kelas > 0) {
                                 </td>
                                 <td class="text-center"><input type="checkbox" class="form-check-input border-secondary" name="check_sampul[]" value="<?php echo $siswa['id_siswa']; ?>"></td>
                                 <td class="text-center"><input type="checkbox" class="form-check-input border-secondary" name="check_identitas[]" value="<?php echo $siswa['id_siswa']; ?>"></td>
+                                <td class="text-center"><input type="checkbox" class="form-check-input border-secondary" name="check_rapor_pts[]" value="<?php echo $siswa['id_siswa']; ?>"></td>
                                 <td class="text-center"><input type="checkbox" class="form-check-input border-secondary" name="check_rapor[]" value="<?php echo $siswa['id_siswa']; ?>"></td>
                                 <td class="text-center">
                                     <div class="btn-group" role="group">
@@ -231,11 +240,11 @@ if ($id_kelas > 0) {
                                         </a>
                                         
                                         <!-- Tombol Rapor PTS -->
-                                        <a href="rapor_pts_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-sm btn-outline-info" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor PTS">
+                                        <a href="rapor_pts_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>&semester=<?php echo $semester_aktif; ?>&ta=<?php echo $id_tahun_ajaran_aktif; ?>" class="btn btn-sm btn-outline-info" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor PTS">
                                             <i class="bi bi-calendar-event"></i>
                                         </a>
                                         
-                                        <a href="rapor_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-sm btn-outline-primary" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor Lengkap">
+                                        <a href="rapor_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>&semester=<?php echo $semester_aktif; ?>&ta=<?php echo $id_tahun_ajaran_aktif; ?>" class="btn btn-sm btn-outline-primary" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor Lengkap">
                                             <i class="bi bi-file-earmark-pdf-fill"></i>
                                         </a>
                                     </div>
@@ -313,7 +322,10 @@ function prosesCetakMassal(tipeCetak) {
     }
     
     let ids = listSiswaId.join(',');
-    let url = `rapor_cetak_massal.php?tipe=${tipeCetak}&ids=${ids}`;
+    let semester = '<?php echo $semester_aktif; ?>';
+    let ta = '<?php echo $id_tahun_ajaran_aktif; ?>';
+    let targetFile = (tipeCetak === 'rapor_pts') ? 'rapor_cetak_massal_pts.php' : 'rapor_cetak_massal.php';
+    let url = `${targetFile}?tipe=${tipeCetak}&ids=${ids}&semester=${semester}&ta=${ta}`;
     
     window.open(url, '_blank');
 }
@@ -370,8 +382,16 @@ if (isset($_SESSION['pesan'])) {
     $pesan_json = $_SESSION['pesan'];
     // Cek apakah pesan adalah JSON (dari aksi yang lebih baru)
     if (strpos($pesan_json, '{') === 0) {
-        $pesan_data = json_decode($pesan_json, true);
-        echo "<script>Swal.fire({icon: '".($pesan_data['icon'] ?? 'info')."', title: '".($pesan_data['title'] ?? 'Pemberitahuan')."', text: '".($pesan_data['text'] ?? '')."'});</script>";
+        echo "<script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var pesanData = " . $pesan_json . ";
+                Swal.fire({
+                    icon: pesanData.icon || 'info',
+                    title: pesanData.title || 'Pemberitahuan',
+                    text: pesanData.text || ''
+                });
+            });
+        </script>";
     } else {
         // Pesan adalah teks biasa (dari aksi lama)
         $pesan_teks = addslashes($pesan_json);

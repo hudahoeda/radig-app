@@ -12,7 +12,7 @@ if ($_SESSION['role'] != 'guru') {
 $id_guru_login = $_SESSION['id_guru'];
 
 // === OPTIMASI PERFORMA (LANGKAH 1): Ambil semua data TP dalam satu query ===
-$query_tp = "SELECT tp.id_tp, tp.id_mapel, tp.semester, tp.kode_tp, tp.deskripsi_tp, m.nama_mapel 
+$query_tp = "SELECT tp.id_tp, tp.id_mapel, tp.semester, tp.kode_tp, tp.deskripsi_tp, tp.kktp, m.nama_mapel
              FROM tujuan_pembelajaran tp 
              JOIN mata_pelajaran m ON tp.id_mapel = m.id_mapel
              WHERE tp.id_guru_pembuat = ? 
@@ -112,6 +112,7 @@ foreach ($tp_data as $tp) {
                 <!-- Tombol Aksi Massal -->
                 <button type="button" id="btn-tugaskan-massal" class="btn btn-primary" disabled data-bs-toggle="modal" data-bs-target="#modalPenugasanMassal"><i class="bi bi-door-open-fill me-2"></i>Tugaskan Pilihan</button>
                 <button type="button" id="btn-hapus-massal" class="btn btn-danger" disabled><i class="bi bi-trash-fill me-2"></i>Hapus Pilihan</button>
+                <button type="button" class="btn btn-warning text-dark fw-bold" data-bs-toggle="modal" data-bs-target="#modalCopyTP"><i class="bi bi-files me-2"></i>Salin TP Lama</button>
                 <a href="tp_guru_import.php" class="btn btn-light"><i class="bi bi-file-earmark-arrow-up-fill me-2"></i>Import TP</a>
                 <a href="tp_guru_tambah.php" class="btn btn-outline-light"><i class="bi bi-plus-circle-fill me-2"></i>Tambah TP Baru</a>
             </div>
@@ -142,6 +143,7 @@ foreach ($tp_data as $tp) {
                                     <th style="width: 10%;" class="text-center">Semester</th>
                                     <th style="width: 10%;">Kode TP</th>
                                     <th>Deskripsi Tujuan Pembelajaran</th>
+                                    <th style="width: 10%;" class="text-center">KKTP</th>
                                     <th style="width: 25%;">Ditugaskan di Kelas</th>
                                     <th class="text-center" style="width: 15%;">Aksi</th>
                                 </tr>
@@ -161,6 +163,7 @@ foreach ($tp_data as $tp) {
                                         <td class="text-center fw-bold"><?php echo $tp['semester']; ?></td>
                                         <td><span class="badge bg-secondary"><?php echo htmlspecialchars($tp['kode_tp']); ?></span></td>
                                         <td><?php echo htmlspecialchars($tp['deskripsi_tp']); ?></td>
+                                        <td class="text-center fw-bold text-primary"><?php echo htmlspecialchars($tp['kktp'] ?? '75'); ?></td>
                                         <td>
                                             <div class="d-flex flex-wrap" style="gap: 0.25rem;">
                                                 <?php
@@ -196,6 +199,53 @@ foreach ($tp_data as $tp) {
                 </form>
             <?php endif; ?>
         </div>
+    </div>
+</div>
+
+<!-- Modal Copy TP -->
+<div class="modal fade" id="modalCopyTP" tabindex="-1" aria-labelledby="modalCopyTPLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form action="tp_guru_copy.php" method="get">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title text-dark fw-bold" id="modalCopyTPLabel"><i class="bi bi-files me-2"></i>Salin TP dari Tahun Ajaran Lama</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Pilih Tahun Ajaran sumber untuk melihat daftar TP milik Anda. Anda dapat memilih TP mana saja yang ingin disalin.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih Tahun Ajaran Lama:</label>
+                        <select class="form-select" name="id_ta_sumber" required>
+                            <option value="" selected disabled>-- Pilih Tahun Ajaran --</option>
+                            <?php
+                            try {
+                                $q_ta_lama = mysqli_query($koneksi, "
+                                    SELECT DISTINCT ta.id_tahun_ajaran, ta.tahun_ajaran
+                                    FROM tahun_ajaran ta
+                                    JOIN tujuan_pembelajaran tp ON ta.id_tahun_ajaran = tp.id_tahun_ajaran
+                                    WHERE tp.id_guru_pembuat = $id_guru_login AND ta.status != 'Aktif'
+                                    ORDER BY ta.id_tahun_ajaran DESC
+                                ");
+                                if ($q_ta_lama && mysqli_num_rows($q_ta_lama) > 0) {
+                                    while($ta = mysqli_fetch_assoc($q_ta_lama)) {
+                                        echo "<option value='{$ta['id_tahun_ajaran']}'>{$ta['tahun_ajaran']}</option>";
+                                    }
+                                } else {
+                                    echo "<option value='' disabled>Tidak ada riwayat TP lama ditemukan.</option>";
+                                }
+                            } catch (Exception $e) {
+                                echo "<option value='' disabled>Error: " . htmlspecialchars($e->getMessage()) . "</option>";
+                            }
+                            ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold"><i class="bi bi-search me-2"></i>Lihat Daftar TP</button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -431,16 +481,6 @@ function konfirmasiHapus(id) {
 </script>
 
 <?php
-if (isset($_SESSION['pesan'])) {
-    // Menggunakan format JSON dari file aksi (jika ada)
-    $pesan = $_SESSION['pesan'];
-    if (strpos($pesan, '{') === 0) { // Cek jika ini format JSON
-        echo "<script>Swal.fire(" . $pesan . ");</script>";
-    } else { // Fallback untuk string biasa
-        echo "<script>Swal.fire('Berhasil', '" . addslashes($pesan) . "', 'success');</script>";
-    }
-    unset($_SESSION['pesan']);
-}
 include 'footer.php';
 ?>
 

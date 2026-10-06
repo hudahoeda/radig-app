@@ -10,10 +10,10 @@ if ($_SESSION['role'] != 'admin') {
 }
 
 // Mengambil data dari tabel sekolah
-$query_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
+$query_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
 if (mysqli_num_rows($query_sekolah) == 0) {
     mysqli_query($koneksi, "INSERT INTO sekolah (id_sekolah, nama_sekolah) VALUES (1, 'NAMA SEKOLAH ANDA')");
-    $query_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
+    $query_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
 }
 $sekolah = mysqli_fetch_assoc($query_sekolah);
 
@@ -31,6 +31,15 @@ $kop_sekolah_sekarang = !empty($pengaturan['kop_sekolah']) ? $pengaturan['kop_se
 // [FITUR BARU] Variabel Tanpa KOP
 $cetak_tanpa_kop = $pengaturan['cetak_tanpa_kop'] ?? '0';
 $margin_atas_tanpa_kop = $pengaturan['margin_atas_tanpa_kop'] ?? '0';
+
+// [KOP DESIGNER] Variabel KOP Teks
+$kop_baris_1 = $pengaturan['kop_baris_1'] ?? 'PEMERINTAH KABUPATEN ' . strtoupper($sekolah['kabupaten_kota'] ?? '');
+$kop_baris_2 = $pengaturan['kop_baris_2'] ?? 'DINAS PENDIDIKAN';
+$kop_baris_3 = $pengaturan['kop_baris_3'] ?? strtoupper($sekolah['nama_sekolah'] ?? '');
+$kop_baris_4 = $pengaturan['kop_baris_4'] ?? ($sekolah['jalan'] ?? '') . ', Desa/Kel. ' . ($sekolah['desa_kelurahan'] ?? '') . ', Kec. ' . ($sekolah['kecamatan'] ?? '') . '<br>Telp: ' . ($sekolah['telepon'] ?? '') . ' Email: ' . ($sekolah['email'] ?? '');
+$kop_logo_kiri_tampil = $pengaturan['kop_logo_kiri_tampil'] ?? '1';
+$kop_logo_kanan_tampil = $pengaturan['kop_logo_kanan_tampil'] ?? '1';
+$logo_kiri = $pengaturan['logo_kiri'] ?? 'logo_kabupaten.png';
 
 // Mengambil semua data tahun ajaran
 $query_ta = mysqli_query($koneksi, "SELECT * FROM tahun_ajaran ORDER BY tahun_ajaran DESC");
@@ -201,7 +210,11 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                     </div>
                                     <div class="col-md-4">
                                         <label for="jenjang" class="form-label">Jenjang</label>
-                                        <input type="text" class="form-control bg-light" id="jenjang" name="jenjang" value="SMP" readonly>
+                                        <select class="form-select" id="jenjang" name="jenjang">
+                                            <option value="SD" <?php echo (isset($sekolah['jenjang']) && $sekolah['jenjang'] == 'SD') ? 'selected' : ''; ?>>SD / MI</option>
+                                            <option value="SMP" <?php echo (isset($sekolah['jenjang']) && $sekolah['jenjang'] == 'SMP') ? 'selected' : ''; ?>>SMP / MTs</option>
+                                            <option value="SMA" <?php echo (isset($sekolah['jenjang']) && $sekolah['jenjang'] == 'SMA') ? 'selected' : ''; ?>>SMA / SMK / MA</option>
+                                        </select>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="npsn" class="form-label">NPSN</label>
@@ -267,11 +280,11 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                         <input type="text" class="form-control form-control-lg" id="nama_kepsek" name="nama_kepsek" value="<?php echo htmlspecialchars($sekolah['nama_kepsek'] ?? ''); ?>" required>
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="nip_kepsek" class="form-label">NIP Kepala Sekolah</label>
-                                        <input type="text" class="form-control" id="nip_kepsek" name="nip_kepala_sekolah" value="<?php echo htmlspecialchars($sekolah['nip_kepsek'] ?? ''); ?>">
+                                        <label for="nip_kepsek" class="form-label">NIP Kepala Sekolah <small class="text-muted">(Kosongkan jika tidak ada)</small></label>
+                                        <input type="text" class="form-control" id="nip_kepsek" name="nip_kepsek" value="<?php echo htmlspecialchars($sekolah['nip_kepsek'] ?? ''); ?>">
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="jabatan_kepsek" class="form-label">Pangkat / Golongan</label>
+                                        <label for="jabatan_kepsek" class="form-label">Pangkat / Golongan <small class="text-muted">(Kosongkan jika tidak ada)</small></label>
                                         <input type="text" class="form-control" id="jabatan_kepsek" name="jabatan_kepsek" value="<?php echo htmlspecialchars($sekolah['jabatan_kepsek'] ?? ''); ?>" placeholder="Contoh: Pembina Tk. I, IV/b">
                                     </div>
                                 </div>
@@ -296,7 +309,7 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                         </select>
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="kkm" class="form-label">KKM / Batas Tuntas (0-100)</label>
+                                        <label for="kkm" class="form-label">KKTP Default (Fallback 0-100)</label>
                                         <input type="number" class="form-control" id="kkm" name="pengaturan[kkm]" value="<?php echo htmlspecialchars($pengaturan['kkm'] ?? '75'); ?>" min="0" max="100">
                                     </div>
                                     <div class="col-md-6">
@@ -449,12 +462,11 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                 </div>
                             </form>
 
-                            <!-- 2. Pengaturan KOP Surat (DI SINI SAYA TAMBAHKAN FITURNYA) -->
-                            <!-- Menggunakan aksi 'simpan_kop' yang sudah diperbarui di backend -->
+                                                        <!-- 2. Pengaturan KOP Surat (INTERACTIVE DESIGNER) -->
                             <form action="pengaturan_aksi.php?aksi=simpan_kop" method="POST" enctype="multipart/form-data">
-                                <div class="form-section-title"><i class="bi bi-image"></i>Kustomisasi KOP Surat</div>
+                                <div class="form-section-title"><i class="bi bi-image"></i>Kustomisasi KOP Surat (Visual Designer)</div>
                                 
-                                <!-- === FITUR BARU: TOGGLE TANPA KOP === -->
+                                <!-- === TOGGLE TANPA KOP === -->
                                 <div class="modern-switch mb-3 bg-light border-0">
                                     <div class="switch-label-content">
                                         <h6><i class="bi bi-printer-fill me-2 text-dark"></i>Mode Tanpa KOP (Pre-printed)</h6>
@@ -476,15 +488,13 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                         <i class="bi bi-ruler me-1"></i> Ukur jarak dari ujung atas kertas hingga baris pertama konten rapor dimulai.
                                     </div>
                                 </div>
-                                <!-- ==================================== -->
 
-                                <!-- === AREA PENGATURAN GAMBAR KOP (YANG LAMA) === -->
-                                <!-- Ini akan disembunyikan via JS jika Mode Tanpa KOP aktif -->
+                                <!-- === AREA PENGATURAN GAMBAR KOP FULL === -->
                                 <div id="wrapper-pengaturan-gambar">
                                     <div class="modern-switch mb-4">
                                         <div class="switch-label-content">
-                                            <h6>Gunakan Gambar KOP Kustom</h6>
-                                            <small>Aktifkan untuk mengganti KOP teks standar dengan gambar scan/screenshot KOP sekolah Anda.</small>
+                                            <h6>Gunakan Gambar KOP Full Kustom</h6>
+                                            <small>Aktifkan untuk mengganti KOP teks standar dengan gambar scan KOP (lebar penuh).</small>
                                         </div>
                                         <div class="form-check form-switch form-switch-lg">
                                             <input type="hidden" name="rapor_tampil_kop" value="0">
@@ -496,17 +506,14 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                     <div id="area-upload-kop" class="bg-light border rounded p-4 mb-4 <?php echo ($tampil_kop == '1') ? '' : 'd-none'; ?>">
                                         <div class="row g-4">
                                             <div class="col-md-7">
-                                                <label for="file_kop_sekolah" class="form-label mb-2">Upload File Gambar KOP</label>
-                                                <!-- Pastikan name input file sesuai: file_kop (sesuai backend baru) -->
+                                                <label for="file_kop_sekolah" class="form-label mb-2">Upload File Gambar KOP Full</label>
                                                 <input type="file" class="form-control" id="file_kop_sekolah" name="file_kop" accept="image/png, image/jpeg, image/jpg">
                                                 
                                                 <div class="mt-3 p-3 bg-white border rounded">
                                                     <h6 class="text-primary fw-bold mb-2"><i class="bi bi-lightbulb"></i> Tips Hasil Terbaik:</h6>
                                                     <ul class="mb-0 small text-muted ps-3">
-                                                        <li>Gunakan format <b>PNG</b> atau <b>JPG</b> kualitas tinggi.</li>
-                                                        <li>Disarankan lebar gambar minimal <b>2000px</b> agar hasil cetak PDF tidak pecah/buram.</li>
+                                                        <li>Format PNG/JPG, lebar minimal 2000px.</li>
                                                         <li>Crop gambar hanya pada bagian KOP (Logo + Teks + Garis Bawah).</li>
-                                                        <li>Sistem akan otomatis menyesuaikan lebar gambar dengan lebar kertas (A4/F4).</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -515,11 +522,10 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                                 <div class="img-preview-container bg-white">
                                                     <?php if (!empty($kop_sekolah_sekarang) && file_exists('uploads/' . $kop_sekolah_sekarang)): ?>
                                                         <img src="uploads/<?php echo htmlspecialchars($kop_sekolah_sekarang); ?>" class="img-preview" alt="KOP Sekolah">
-                                                        <div class="mt-2 text-success small"><i class="bi bi-check-circle-fill"></i> KOP Aktif</div>
                                                     <?php else: ?>
                                                         <div class="preview-placeholder">
                                                             <i class="bi bi-image"></i>
-                                                            <span>Belum ada gambar diupload</span>
+                                                            <span>Belum ada gambar</span>
                                                         </div>
                                                     <?php endif; ?>
                                                 </div>
@@ -527,8 +533,128 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- === AREA INTERACTIVE DESIGNER (KOP TEKS) === -->
+                                <div id="wrapper-designer-kop" class="<?php echo ($tampil_kop == '1' || $cetak_tanpa_kop == '1') ? 'd-none' : ''; ?>">
+                                    <div class="card shadow-sm border-0 mb-4 bg-light">
+                                        <div class="card-header bg-white border-bottom fw-bold text-primary">
+                                            <i class="bi bi-magic me-2"></i>Desainer KOP Surat Teks
+                                        </div>
+                                        <div class="card-body">
+
+                                            <div class="row g-4">
+
+                                                <!-- AREA LIVE PREVIEW -->
+                                                <div class="col-12 mb-2">
+                                                    <h6 class="fw-bold mb-3 text-center text-primary"><i class="bi bi-eye me-2"></i>Live Preview KOP Surat (Simulasi Kertas A4)</h6>
+
+                                                    <div class="d-flex justify-content-center">
+                                                        <!-- Live Preview Box -->
+                                                        <div class="bg-white border rounded shadow" style="padding: 30px 40px; font-family: 'Times New Roman', Times, serif; font-size: 10pt; color: #000; width: 100%; max-width: 800px; box-sizing: border-box; overflow-x: auto;">
+                                                            <table style="width: 100%; border-bottom: 3px solid #000; padding-bottom: 5px; margin-bottom: 5px; table-layout: fixed;">
+                                                                <tr>
+                                                                    <!-- Preview Logo Kiri -->
+                                                                    <td id="preview_td_kiri" style="width: 90px; text-align: center; vertical-align: middle; <?php echo ($kop_logo_kiri_tampil == '1') ? '' : 'display:none;'; ?>">
+                                                                        <?php
+                                                                        $logo_kiri_url = file_exists('uploads/' . $logo_kiri) ? 'uploads/' . $logo_kiri : 'uploads/logo_kabupaten.png';
+                                                                        ?>
+                                                                        <img src="<?php echo $logo_kiri_url; ?>" style="width: 80px;" alt="Logo Kiri">
+                                                                    </td>
+
+                                                                    <!-- Preview Teks -->
+                                                                    <td style="text-align: center; vertical-align: middle;">
+                                                                        <h4 id="prev_b1" style="font-size: 14pt; margin: 0; line-height: 1.1; font-weight: normal;"><?php echo htmlspecialchars($kop_baris_1); ?></h4>
+                                                                        <p id="prev_b2" style="font-size: 12pt; margin: 2px 0 0 0; line-height: 1.1;"><?php echo htmlspecialchars($kop_baris_2); ?></p>
+                                                                        <h3 id="prev_b3" style="font-size: 18pt; font-weight: bold; margin: 4px 0; color: #000;"><?php echo htmlspecialchars($kop_baris_3); ?></h3>
+                                                                        <p id="prev_b4" style="font-size: 9pt; line-height: 1.2; margin: 0;"><?php echo nl2br(htmlspecialchars(str_replace('<br>', "\n", $kop_baris_4))); ?></p>
+                                                                    </td>
+
+                                                                    <!-- Preview Logo Kanan -->
+                                                                    <td id="preview_td_kanan" style="width: 90px; text-align: center; vertical-align: middle; <?php echo ($kop_logo_kanan_tampil == '1') ? '' : 'display:none;'; ?>">
+                                                                        <?php if (!empty($sekolah['logo_sekolah']) && file_exists('uploads/' . $sekolah['logo_sekolah'])): ?>
+                                                                            <img src="uploads/<?php echo htmlspecialchars($sekolah['logo_sekolah']); ?>" style="width: 80px;" alt="Logo Kanan">
+                                                                        <?php else: ?>
+                                                                            <div style="width:80px; height:80px; border:1px dashed #ccc; display:inline-block; line-height:80px; font-size:9pt; color:#ccc;">LogoSek</div>
+                                                                        <?php endif; ?>
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
+                                                            <div style="font-size:8pt; color:#999; text-align:center; font-family:sans-serif; margin-top:10px;">
+                                                                *Preview ini menampilkan bentuk KOP secara real-size yang mendekati hasil PDF A4.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- AREA FORM PENGATURAN -->
+                                                <div class="col-12">
+                                                    <div class="bg-white p-4 border rounded shadow-sm">
+                                                        <div class="row g-4">
+                                                            <div class="col-md-7 border-end pe-4">
+                                                                <h6 class="fw-bold mb-3"><i class="bi bi-fonts me-2"></i>Atur Konten Teks KOP</h6>
+
+                                                                <div class="mb-3">
+                                                                    <label class="form-label small fw-bold">Baris 1 (Misal: PEMERINTAH KABUPATEN... / YAYASAN...)</label>
+                                                                    <input type="text" class="form-control form-control-sm" id="input_kop_baris_1" name="kop_baris_1" value="<?php echo htmlspecialchars($kop_baris_1); ?>">
+                                                                </div>
+
+                                                                <div class="mb-3">
+                                                                    <label class="form-label small fw-bold">Baris 2 (Misal: DINAS PENDIDIKAN)</label>
+                                                                    <input type="text" class="form-control form-control-sm" id="input_kop_baris_2" name="kop_baris_2" value="<?php echo htmlspecialchars($kop_baris_2); ?>">
+                                                                </div>
+
+                                                                <div class="mb-3">
+                                                                    <label class="form-label small fw-bold">Baris 3 (Nama Sekolah)</label>
+                                                                    <input type="text" class="form-control form-control-sm fw-bold text-primary" id="input_kop_baris_3" name="kop_baris_3" value="<?php echo htmlspecialchars($kop_baris_3); ?>">
+                                                                </div>
+
+                                                                <div class="mb-3">
+                                                                    <label class="form-label small fw-bold">Baris 4 (Alamat, Kontak, Website)</label>
+                                                                    <textarea class="form-control form-control-sm" id="input_kop_baris_4" name="kop_baris_4" rows="3"><?php echo htmlspecialchars(str_replace('<br>', "\n", $kop_baris_4)); ?></textarea>
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="col-md-5 ps-4">
+                                                                <h6 class="fw-bold mb-3"><i class="bi bi-images me-2"></i>Atur Logo KOP</h6>
+
+                                                                <div class="mb-4">
+                                                                    <div class="form-check form-switch mb-2">
+                                                                        <input type="hidden" name="kop_logo_kiri_tampil" value="0">
+                                                                        <input class="form-check-input" type="checkbox" id="toggle_logo_kiri" name="kop_logo_kiri_tampil" value="1" <?php if($kop_logo_kiri_tampil == '1') echo 'checked'; ?>>
+                                                                        <label class="form-check-label fw-bold text-primary" for="toggle_logo_kiri">Tampilkan Logo Kiri</label>
+                                                                    </div>
+                                                                    <div class="mb-2 ms-4">
+                                                                        <label class="form-label small">Ganti Logo Kiri (Instansi)</label>
+                                                                        <input type="file" class="form-control form-control-sm" name="file_logo_kiri" accept="image/png, image/jpeg">
+                                                                        <div class="form-text" style="font-size:0.75rem;">Biarkan kosong jika tidak ingin ganti. Default: Logo Pemda.</div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <hr>
+
+                                                                <div class="mt-4">
+                                                                    <div class="form-check form-switch mb-2">
+                                                                        <input type="hidden" name="kop_logo_kanan_tampil" value="0">
+                                                                        <input class="form-check-input" type="checkbox" id="toggle_logo_kanan" name="kop_logo_kanan_tampil" value="1" <?php if($kop_logo_kanan_tampil == '1') echo 'checked'; ?>>
+                                                                        <label class="form-check-label fw-bold text-primary" for="toggle_logo_kanan">Tampilkan Logo Kanan</label>
+                                                                    </div>
+                                                                    <div class="ms-4 form-text" style="font-size:0.75rem;">
+                                                                        Logo Kanan otomatis mengambil Logo Sekolah yang diupload di sidebar panel kanan.
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="text-end pb-4 mb-4 border-bottom">
-                                    <button type="submit" class="btn btn-success px-4"><i class="bi bi-upload me-2"></i>Simpan Pengaturan KOP</button>
+                                    <button type="submit" class="btn btn-success px-4"><i class="bi bi-save me-2"></i>Simpan Konfigurasi KOP</button>
                                 </div>
                             </form>
 
@@ -623,6 +749,23 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                 </div>
             </div>
 
+            <!-- Card Pemeliharaan Sistem -->
+            <div class="side-card">
+                <div class="side-card-header">
+                    <i class="bi bi-tools"></i> Pemeliharaan Sistem
+                </div>
+                <div class="side-card-body">
+                    <p class="small text-muted mb-3">
+                        Fitur ini memaksa sistem menghitung ulang dan memperbarui seluruh narasi rapor untuk <b>semua kelas</b> secara massal. Gunakan fitur ini jika ada pembaruan aturan kurikulum.
+                    </p>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-danger" onclick="konfirmasiRegenerateMassal()">
+                            <i class="bi bi-arrow-repeat me-2"></i>Regenerate Massal Rapor
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Card Info -->
             <div class="side-card">
                 <div class="side-card-header bg-info bg-opacity-10 text-info-emphasis border-info border-opacity-25">
@@ -630,7 +773,7 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
                 </div>
                 <div class="side-card-body">
                     <ul class="list-unstyled small mb-0">
-                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>Versi Aplikasi: <strong>V2.0.1 Rev</strong></li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>Versi Aplikasi: <strong>v3.1 - Stable Pro</strong></li>
                         <li class="mb-2"><i class="bi bi-hdd-network text-primary me-2"></i>Status PHP: <strong><?php echo phpversion(); ?></strong></li>
                         <li><i class="bi bi-database text-warning me-2"></i>Database: <strong>MySQL</strong></li>
                     </ul>
@@ -700,6 +843,98 @@ $daftar_tahun_ajaran = mysqli_fetch_all($query_ta, MYSQLI_ASSOC);
         });
 
     });
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Sync Text Inputs
+    const b1_in = document.getElementById('input_kop_baris_1');
+    const b2_in = document.getElementById('input_kop_baris_2');
+    const b3_in = document.getElementById('input_kop_baris_3');
+    const b4_in = document.getElementById('input_kop_baris_4');
+
+    const prev_b1 = document.getElementById('prev_b1');
+    const prev_b2 = document.getElementById('prev_b2');
+    const prev_b3 = document.getElementById('prev_b3');
+    const prev_b4 = document.getElementById('prev_b4');
+
+    if (b1_in) b1_in.addEventListener('input', e => prev_b1.textContent = e.target.value);
+    if (b2_in) b2_in.addEventListener('input', e => prev_b2.textContent = e.target.value);
+    if (b3_in) b3_in.addEventListener('input', e => prev_b3.textContent = e.target.value);
+    if (b4_in) b4_in.addEventListener('input', e => {
+        prev_b4.innerHTML = e.target.value.replace(/\n/g, '<br>');
+    });
+
+    // Sync Toggles
+    const toggle_kiri = document.getElementById('toggle_logo_kiri');
+    const toggle_kanan = document.getElementById('toggle_logo_kanan');
+    const td_kiri = document.getElementById('preview_td_kiri');
+    const td_kanan = document.getElementById('preview_td_kanan');
+
+    if (toggle_kiri) toggle_kiri.addEventListener('change', e => {
+        td_kiri.style.display = e.target.checked ? 'table-cell' : 'none';
+    });
+
+    if (toggle_kanan) toggle_kanan.addEventListener('change', e => {
+        td_kanan.style.display = e.target.checked ? 'table-cell' : 'none';
+    });
+
+    // Toggle Sections logic
+    const toggleTanpaKop = document.getElementById('toggleTanpaKop');
+    const raporTampilKop = document.getElementById('rapor_tampil_kop');
+    const areaMargin = document.getElementById('areaMarginKop');
+    const wrapGambar = document.getElementById('wrapper-pengaturan-gambar');
+    const wrapDesigner = document.getElementById('wrapper-designer-kop');
+    const areaUploadKop = document.getElementById('area-upload-kop');
+
+    function updateSectionVisibility() {
+        // Tanpa KOP takes highest priority
+        if (toggleTanpaKop && toggleTanpaKop.checked) {
+            areaMargin.classList.remove('d-none');
+            wrapGambar.classList.add('d-none');
+            wrapDesigner.classList.add('d-none');
+        } else {
+            if(areaMargin) areaMargin.classList.add('d-none');
+            if(wrapGambar) wrapGambar.classList.remove('d-none');
+
+            // Image vs Text priority
+            if (raporTampilKop && raporTampilKop.checked) {
+                areaUploadKop.classList.remove('d-none');
+                wrapDesigner.classList.add('d-none');
+            } else {
+                if(areaUploadKop) areaUploadKop.classList.add('d-none');
+                if(wrapDesigner) wrapDesigner.classList.remove('d-none');
+            }
+        }
+    }
+
+    if (toggleTanpaKop) toggleTanpaKop.addEventListener('change', updateSectionVisibility);
+    if (raporTampilKop) raporTampilKop.addEventListener('change', updateSectionVisibility);
+});
+
+function konfirmasiRegenerateMassal() {
+    Swal.fire({
+        title: 'Regenerate Seluruh Rapor?',
+        text: "Proses ini akan memakan waktu sejenak karena sistem akan menghitung ulang seluruh nilai dan memperbarui deskripsi kompetensi murid di semua kelas.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Ya, Hitung Ulang!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Sedang Memproses...',
+                text: 'Harap tunggu dan jangan tutup halaman ini.',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading()
+                }
+            });
+            window.location.href = 'pengaturan_aksi.php?aksi=regenerate_massal_rapor';
+        }
+    })
+}
 </script>
 
 <?php include 'footer.php'; ?>

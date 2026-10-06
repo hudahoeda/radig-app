@@ -136,7 +136,9 @@ if ($aksi == 'tambah') {
             $stmt_insert = mysqli_prepare($koneksi, "INSERT INTO guru_mengajar (id_guru, id_mapel, id_kelas, id_tahun_ajaran) VALUES (?, ?, ?, ?)");
             foreach ($penugasan_dipilih as $id_mapel => $daftar_kelas) {
                 if (is_array($daftar_kelas)) {
-                    foreach ($daftar_kelas as $id_kelas) {
+                    // Pastikan tidak ada duplikasi class dari submit form yang tidak sengaja
+                    $daftar_kelas_unik = array_unique($daftar_kelas);
+                    foreach ($daftar_kelas_unik as $id_kelas) {
                         mysqli_stmt_bind_param($stmt_insert, "iiii", $id_guru, $id_mapel, $id_kelas, $id_tahun_ajaran);
                         mysqli_stmt_execute($stmt_insert);
                     }
@@ -158,11 +160,19 @@ if ($aksi == 'tambah') {
         mysqli_rollback($koneksi);
         
         if ($e->getCode() == 1062) { // 1062 = Error duplicate entry
-            $_SESSION['error'] = json_encode([
-                'icon' => 'error',
-                'title' => 'Gagal',
-                'html' => "Update gagal. Username '<b>" . htmlspecialchars($username) . "</b>' atau NIP sudah digunakan."
-            ]);
+            if (stripos($e->getMessage(), 'username') !== false || stripos($e->getMessage(), 'nip') !== false) {
+                $_SESSION['error'] = json_encode([
+                    'icon' => 'error',
+                    'title' => 'Gagal',
+                    'html' => "Update gagal. Username '<b>" . htmlspecialchars($username) . "</b>' atau NIP sudah digunakan."
+                ]);
+            } else {
+                $_SESSION['error'] = json_encode([
+                    'icon' => 'error',
+                    'title' => 'Gagal',
+                    'html' => "Update gagal karena duplikasi data.<br><small>Debug: " . htmlspecialchars($e->getMessage()) . "</small>"
+                ]);
+            }
         } else {
             $_SESSION['error'] = json_encode([
                 'icon' => 'error',
@@ -203,6 +213,38 @@ if ($aksi == 'tambah') {
             'icon' => 'warning',
             'title' => 'Aksi Ditolak',
             'html' => 'Anda tidak dapat menghapus akun Anda sendiri.'
+        ]);
+        header("location:pengguna_tampil.php");
+        exit();
+    }
+
+    // [SECURITY HARDENING] Strict Protection: Cek relasi data
+    $cek_mengajar = mysqli_prepare($koneksi, "SELECT id_guru_mengajar FROM guru_mengajar WHERE id_guru = ? LIMIT 1");
+    mysqli_stmt_bind_param($cek_mengajar, "i", $id_guru);
+    mysqli_stmt_execute($cek_mengajar);
+    mysqli_stmt_store_result($cek_mengajar);
+    $ada_mengajar = mysqli_stmt_num_rows($cek_mengajar) > 0;
+    mysqli_stmt_close($cek_mengajar);
+
+    $cek_tp = mysqli_prepare($koneksi, "SELECT id_tp FROM tujuan_pembelajaran WHERE id_guru_pembuat = ? LIMIT 1");
+    mysqli_stmt_bind_param($cek_tp, "i", $id_guru);
+    mysqli_stmt_execute($cek_tp);
+    mysqli_stmt_store_result($cek_tp);
+    $ada_tp = mysqli_stmt_num_rows($cek_tp) > 0;
+    mysqli_stmt_close($cek_tp);
+
+    $cek_wali = mysqli_prepare($koneksi, "SELECT id_kelas FROM kelas WHERE id_wali_kelas = ? LIMIT 1");
+    mysqli_stmt_bind_param($cek_wali, "i", $id_guru);
+    mysqli_stmt_execute($cek_wali);
+    mysqli_stmt_store_result($cek_wali);
+    $ada_wali = mysqli_stmt_num_rows($cek_wali) > 0;
+    mysqli_stmt_close($cek_wali);
+
+    if ($ada_mengajar || $ada_tp || $ada_wali) {
+        $_SESSION['error'] = json_encode([
+            'icon' => 'error',
+            'title' => 'Gagal Hapus',
+            'html' => 'Guru tidak bisa dihapus karena masih terhubung dengan data lain (Penugasan Mengajar, Wali Kelas, atau Tujuan Pembelajaran).'
         ]);
         header("location:pengguna_tampil.php");
         exit();
@@ -309,20 +351,45 @@ if ($aksi == 'tambah') {
     // Ubah array ID menjadi string yang aman untuk query IN
     $id_list = implode(',', array_map('intval', $filtered_ids));
     
-    $query = "DELETE FROM guru WHERE id_guru IN ($id_list)";
+    // [SECURITY HARDENING] Strict Protection: Filter guru yang aman dihapus
+    $query_cek = mysqli_query($koneksi, "
+        SELECT DISTINCT id_guru FROM guru_mengajar WHERE id_guru IN ($id_list)
+        UNION
+        SELECT DISTINCT id_guru_pembuat FROM tujuan_pembelajaran WHERE id_guru_pembuat IN ($id_list)
+        UNION
+        SELECT DISTINCT id_wali_kelas FROM kelas WHERE id_wali_kelas IN ($id_list)
+    ");
+
+    $guru_ditolak = [];
+    while ($row = mysqli_fetch_assoc($query_cek)) {
+        $guru_ditolak[] = $row['id_guru'] ?? $row['id_guru_pembuat'] ?? $row['id_wali_kelas'];
+    }
+
+    $guru_bisa_dihapus = array_diff($filtered_ids, $guru_ditolak);
     
-    if(mysqli_query($koneksi, $query)){
+    if (!empty($guru_bisa_dihapus)) {
+        $id_list_aman = implode(',', array_map('intval', $guru_bisa_dihapus));
+        $query = "DELETE FROM guru WHERE id_guru IN ($id_list_aman)";
+        mysqli_query($koneksi, $query);
         $jumlah_terhapus = mysqli_affected_rows($koneksi);
+    } else {
+        $jumlah_terhapus = 0;
+    }
+
+    $jumlah_ditolak = count($guru_ditolak);
+
+    if ($jumlah_ditolak > 0) {
+        $pesan = "Berhasil menghapus <b>$jumlah_terhapus</b> pengguna. Namun, <b>$jumlah_ditolak</b> pengguna DITOLAK dihapus karena masih memiliki relasi data.";
+        $_SESSION['error'] = json_encode([
+            'icon' => 'warning',
+            'title' => 'Hapus Sebagian',
+            'html' => $pesan
+        ]);
+    } else {
         $_SESSION['pesan'] = json_encode([
             'icon' => 'success',
             'title' => 'Berhasil',
             'html' => "<b>$jumlah_terhapus</b> pengguna berhasil dihapus."
-        ]);
-    } else {
-        $_SESSION['error'] = json_encode([
-            'icon' => 'error',
-            'title' => 'Gagal',
-            'html' => 'Gagal menghapus pengguna. Error: ' . htmlspecialchars(mysqli_error($koneksi))
         ]);
     }
     header("location:pengguna_tampil.php");

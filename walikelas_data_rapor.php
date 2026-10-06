@@ -16,6 +16,10 @@ $id_tahun_ajaran = mysqli_fetch_assoc($q_ta)['id_tahun_ajaran'];
 $q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
 $semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'];
 
+// Ambil info jenjang sekolah
+$q_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah LIMIT 1");
+$jenjang = mysqli_fetch_assoc($q_sekolah)['jenjang'] ?? 'SMP';
+
 // Ambil data kelas yang diampu oleh Wali Kelas ini
 $q_kelas = mysqli_prepare($koneksi, "SELECT id_kelas, nama_kelas, fase FROM kelas WHERE id_wali_kelas = ? AND id_tahun_ajaran = ?");
 mysqli_stmt_bind_param($q_kelas, "ii", $id_wali_kelas, $id_tahun_ajaran);
@@ -25,8 +29,14 @@ $kelas = mysqli_fetch_assoc($result_kelas);
 $id_kelas = $kelas['id_kelas'] ?? 0;
 $fase_kelas = $kelas['fase'] ?? '';
 
-// Ambil semua siswa di kelas ini
-$q_siswa = $id_kelas ? mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas ORDER BY nama_lengkap ASC") : false;
+// Ambil semua siswa di kelas ini (Termasuk riwayat dari tabel rapor jika melihat tahun lalu)
+$q_siswa = $id_kelas ? mysqli_query($koneksi, "
+    SELECT DISTINCT s.id_siswa, s.nama_lengkap
+    FROM siswa s
+    LEFT JOIN rapor r ON s.id_siswa = r.id_siswa
+    WHERE (s.id_kelas = $id_kelas) OR (r.id_kelas = $id_kelas AND r.id_tahun_ajaran = $id_tahun_ajaran)
+    ORDER BY s.nama_lengkap ASC
+") : false;
 
 // Pre-fetch data yang dibutuhkan untuk tampilan awal
 // 1. Data Rapor (Absensi & Catatan yang sudah ada) - DITAMBAHKAN KEPUTUSAN AKHIR
@@ -123,6 +133,40 @@ if ($id_kelas) {
     </div>
 
     <?php if ($id_kelas && $q_siswa && mysqli_num_rows($q_siswa) > 0) : ?>
+        <div class="d-flex justify-content-end mb-3 gap-2">
+            <a href="walikelas_absensi_template.php" class="btn btn-outline-success">
+                <i class="bi bi-file-earmark-excel me-1"></i> Download Template Excel
+            </a>
+            <button type="button" class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#modalImportAbsensi">
+                <i class="bi bi-upload me-1"></i> Import Absensi & Catatan
+            </button>
+        </div>
+
+        <!-- Modal Import -->
+        <div class="modal fade" id="modalImportAbsensi" tabindex="-1" aria-labelledby="modalImportAbsensiLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <form action="walikelas_absensi_import_aksi.php" method="POST" enctype="multipart/form-data">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="modalImportAbsensiLabel">Import Absensi & Catatan</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Upload file Excel (<code>.xlsx</code>) yang telah Anda isi menggunakan template yang diunduh.</p>
+                            <div class="mb-3">
+                                <label for="file_import" class="form-label">File Excel</label>
+                                <input class="form-control" type="file" id="file_import" name="file_import" accept=".xlsx" required>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-primary">Import Data</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <form action="walikelas_aksi.php?aksi=simpan_data" method="POST">
             <div class="card shadow-sm">
                 <div class="card-body">
@@ -151,6 +195,13 @@ if ($id_kelas) {
                         </div>
                     </div>
                     
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0"><i class="bi bi-people-fill me-2 text-secondary"></i>Daftar Siswa</h5>
+                        <button type="button" class="btn btn-warning shadow-sm fw-bold" id="generate-all-btn">
+                            <i class="bi bi-stars me-1"></i> Generate Semua Catatan Otomatis
+                        </button>
+                    </div>
+
                     <div class="accordion" id="accordionSiswa">
                         <?php $no = 1;
                         mysqli_data_seek($q_siswa, 0);
@@ -211,9 +262,29 @@ if ($id_kelas) {
                                                                 <option value="-" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '-') == '-') ? 'selected' : ''; ?>>- Belum Ditentukan -</option>
                                                                 
                                                                 <?php 
-                                                                // Deteksi Kelas 9 vs Kelas 7/8
-                                                                $nama_kls = strtoupper($kelas['nama_kelas']);
-                                                                if (strpos($nama_kls, 'IX') !== false || strpos($nama_kls, '9') !== false): 
+                                                                // Deteksi otomatis Kelas Akhir berdasarkan Jenjang
+                                                                $jenjang_upper = strtoupper($jenjang);
+                                                                $is_kelas_akhir = false;
+                                                                $nama_kelas_upper = strtoupper($kelas['nama_kelas']);
+
+                                                                if ($jenjang_upper == 'SD' || $jenjang_upper == 'MI') {
+                                                                    // Cari 'VI' tapi pastikan bukan 'VII' (7) atau 'VIII' (8)
+                                                                    // Atau angka '6'
+                                                                    if ((strpos($nama_kelas_upper, 'VI') !== false && strpos($nama_kelas_upper, 'VII') === false && strpos($nama_kelas_upper, 'VIII') === false) || strpos($nama_kelas_upper, '6') !== false) {
+                                                                        $is_kelas_akhir = true;
+                                                                    }
+                                                                } elseif ($jenjang_upper == 'SMA' || $jenjang_upper == 'SMK' || $jenjang_upper == 'MA') {
+                                                                    if (strpos($nama_kelas_upper, 'XII') !== false || strpos($nama_kelas_upper, '12') !== false) {
+                                                                        $is_kelas_akhir = true;
+                                                                    }
+                                                                } else {
+                                                                    // Default SMP / MTs
+                                                                    if (strpos($nama_kelas_upper, 'IX') !== false || strpos($nama_kelas_upper, '9') !== false) {
+                                                                        $is_kelas_akhir = true;
+                                                                    }
+                                                                }
+
+                                                                if ($is_kelas_akhir):
                                                                 ?>
                                                                     <option value="Lulus" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Lulus') ? 'selected' : ''; ?>>Lulus</option>
                                                                     <option value="Tidak Lulus" <?php echo (($rapor_siswa['keputusan_akhir'] ?? '') == 'Tidak Lulus') ? 'selected' : ''; ?>>Tidak Lulus</option>
@@ -397,12 +468,83 @@ if ($id_kelas) {
                 }
             });
         });
+
+        // Fitur Generate Semua Catatan Otomatis
+        $('#generate-all-btn').on('click', function(e) {
+            e.preventDefault();
+
+            var buttons = $('.generate-note-btn');
+            if (buttons.length === 0) return;
+
+            Swal.fire({
+                title: 'Generate Semua Catatan?',
+                text: "Fitur ini akan memproses catatan untuk " + buttons.length + " siswa satu per satu. Proses ini mungkin memakan waktu beberapa saat.",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Ya, Generate Semua!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    var mainBtn = $('#generate-all-btn');
+                    var originalMainText = mainBtn.html();
+                    mainBtn.html('<i class="spinner-border spinner-border-sm me-1"></i> Sedang Memproses...').prop('disabled', true);
+
+                    var index = 0;
+
+                    function processNext() {
+                        if (index >= buttons.length) {
+                            mainBtn.html(originalMainText).prop('disabled', false);
+                            Swal.fire('Selesai!', 'Semua catatan siswa berhasil di-generate secara otomatis.', 'success');
+                            return;
+                        }
+
+                        var btn = $(buttons[index]);
+                        var siswaId = btn.data('siswa-id');
+                        var targetTextarea = $('#catatan-' + siswaId);
+
+                        var sakit = $('input[name="absensi[' + siswaId + '][sakit]"]').val();
+                        var izin = $('input[name="absensi[' + siswaId + '][izin]"]').val();
+                        var alpha = $('input[name="absensi[' + siswaId + '][tanpa_keterangan]"]').val();
+
+                        var originalBtnHtml = btn.html();
+                        btn.html('<i class="spinner-border spinner-border-sm"></i>').prop('disabled', true);
+
+                        // Tampilkan progress di tombol utama
+                        mainBtn.html('<i class="spinner-border spinner-border-sm me-1"></i> Memproses ' + (index + 1) + ' dari ' + buttons.length + '...');
+
+                        $.ajax({
+                            url: 'ajax_generate_catatan.php',
+                            type: 'POST',
+                            data: { id_siswa: siswaId, sakit: sakit, izin: izin, alpha: alpha },
+                            success: function(response) {
+                                targetTextarea.val($('<div/>').html(response).text());
+                            },
+                            complete: function() {
+                                btn.html(originalBtnHtml).prop('disabled', false);
+                                index++;
+                                processNext(); // Panggil secara rekursif untuk antrean berikutnya
+                            }
+                        });
+                    }
+
+                    processNext();
+                }
+            });
+        });
     });
 </script>
 
 <?php
 if (isset($_SESSION['pesan'])) {
-    echo "<script>Swal.fire('Berhasil!','" . addslashes($_SESSION['pesan']) . "','success');</script>";
+    $pesan_raw = $_SESSION['pesan'];
+    $pesan_data = json_decode($pesan_raw, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($pesan_data)) {
+        echo "<script>Swal.fire({icon: '".addslashes($pesan_data['icon'] ?? 'info')."', title: '".addslashes($pesan_data['title'] ?? 'Info')."', text: '".addslashes($pesan_data['text'] ?? '')."'});</script>";
+    } else {
+        echo "<script>Swal.fire('Informasi', '" . addslashes($pesan_raw) . "', 'info');</script>";
+    }
     unset($_SESSION['pesan']);
 }
 include 'footer.php';

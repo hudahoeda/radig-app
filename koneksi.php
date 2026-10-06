@@ -17,4 +17,6 @@ if (!$koneksi) {
 mysqli_set_charset($koneksi, 'utf8mb4');
 date_default_timezone_set('Asia/Jakarta');
 
-$APP_VERSION = 'v2.0.1';
+// Keep the footer consistent with the developer release metadata.
+$release = json_decode(@file_get_contents(__DIR__ . '/local_version.json'), true);
+$APP_VERSION = $release['version'] ?? 'v2.0.1';

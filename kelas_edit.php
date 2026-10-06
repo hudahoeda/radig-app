@@ -30,7 +30,7 @@ if (!$data) {
 }
 
 // Mengambil jenjang sekolah untuk menentukan opsi fase
-$q_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah WHERE id_sekolah = 1");
+$q_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah LIMIT 1");
 $sekolah = mysqli_fetch_assoc($q_sekolah);
 $jenjang = $sekolah['jenjang'] ?? 'SMP'; // Default ke SMP jika tidak ada data
 

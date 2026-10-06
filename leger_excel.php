@@ -40,7 +40,13 @@ $id_tahun_ajaran_aktif = $data_kelas['id_tahun_ajaran'] ?? 0;
 $q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
 $semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'] ?? 1;
 
-$result_siswa = mysqli_query($koneksi, "SELECT id_siswa, nis, nama_lengkap FROM siswa WHERE id_kelas=$id_kelas AND status_siswa='Aktif' ORDER BY nama_lengkap ASC");
+$result_siswa = mysqli_query($koneksi, "
+    SELECT DISTINCT s.id_siswa, s.nis, s.nama_lengkap
+    FROM siswa s
+    LEFT JOIN rapor r ON s.id_siswa = r.id_siswa
+    WHERE (s.id_kelas=$id_kelas) OR (r.id_kelas = $id_kelas AND r.id_tahun_ajaran = $id_tahun_ajaran_aktif)
+    ORDER BY s.nama_lengkap ASC
+");
 $daftar_siswa = [];
 while ($row_s = mysqli_fetch_assoc($result_siswa)) {
     $daftar_siswa[] = $row_s;
@@ -331,7 +337,7 @@ header("Expires: 0");
         </tr>
         <tr>
             <td align="center" bgcolor="#FFCCCC" style="border:1px solid #000; color:#990000;">60</td>
-            <td> : Angka pada "Nilai Akhir" berada di Bawah KKM (<?php echo $kkm; ?>)</td>
+            <td> : Angka pada "Nilai Akhir" berada di Bawah KKTP Default (<?php echo $kkm; ?>)</td>
         </tr>
     </table>
 

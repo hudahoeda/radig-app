@@ -408,22 +408,30 @@ else:
             arsort($tp_lulus); // Tertinggi ke Terendah (Lulus)
             asort($tp_remedi); // Terendah ke Tertinggi (Remedi/Perlu Bimbingan)
 
-            // Ambil maksimal 2 TP terbaik dan terburuk
-            $top_tp = array_slice(array_keys($tp_lulus), 0, 2);
-            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 2); 
+            // Ambil maksimal 1 TP terbaik dan terburuk
+            $top_tp = array_slice(array_keys($tp_lulus), 0, 1);
+            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 1);
             
             // 3. Susun Deskripsi Final
             $deskripsi_draf = "";
             
-            // Kalimat Kekuatan (Top 2 LULUS)
+            // Kalimat Kekuatan (Top 1 LULUS)
             if (!empty($top_tp)) {
-                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
+                $top_score = reset($tp_lulus);
+                if ($top_score >= 90) {
+                    $predikat_teks = "sangat baik";
+                } elseif ($top_score >= 80) {
+                    $predikat_teks = "baik";
+                } else {
+                    $predikat_teks = "cukup baik";
+                }
+                $deskripsi_draf .= "Menunjukkan penguasaan yang $predikat_teks dalam " . implode(', ', $top_tp) . ". ";
             } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
                 // Fallback: Jika nilai akhir tuntas, tapi TP tidak ada yang di atas KKM (semua TP nilainya persis KKM)
                 $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
             }
             
-            // Kalimat Kelemahan/Intervensi (Top 2 REMEDI)
+            // Kalimat Kelemahan/Intervensi (Top 1 REMEDI)
             if (!empty($bottom_tp)) {
                 $deskripsi_draf .= "Namun, perlu penguatan lebih lanjut dalam " . implode(', ', $bottom_tp) . ".";
             } else {
@@ -601,7 +609,7 @@ mysqli_stmt_bind_param($stmt, "iiii", $id_kelas, $id_mapel, $id_guru_login, $sem
         }
     }
 
-    $query_siswa_sql = "SELECT id_siswa, nama_lengkap, agama FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'";
+    $query_siswa_sql = "SELECT DISTINCT s.id_siswa, s.nama_lengkap, s.agama FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)";
     if ($agama_terdeteksi !== null) {
         $agama_filter_sql = mysqli_real_escape_string($koneksi, $agama_terdeteksi);
         $query_siswa_sql .= " AND agama = '$agama_filter_sql'";

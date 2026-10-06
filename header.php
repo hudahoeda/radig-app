@@ -12,6 +12,8 @@ $nama_pengguna = $_SESSION['nama_guru'] ?? $_SESSION['nama_siswa'] ?? 'Pengguna'
 $current_page = basename($_SERVER['PHP_SELF']);
 $foto_profil_path = 'uploads/guruc.png'; // Pastikan Anda punya file ini sebagai default
 
+// Schema upgrades run through the backed-up CLI migration, not page requests.
+
 if (isset($koneksi)) {
     if ($role == 'admin' || $role == 'guru') {
         $id_pengguna = $_SESSION['id_guru'];
@@ -36,6 +38,18 @@ if (isset($koneksi)) {
         }
     }
 }
+
+// Ambil Logo untuk Favicon
+$logo_path = 'uploads/logo-aplikasi.png';
+if (isset($koneksi)) {
+    $q_sekolah_favicon = mysqli_query($koneksi, "SELECT logo_sekolah FROM sekolah LIMIT 1");
+    if ($q_sekolah_favicon && mysqli_num_rows($q_sekolah_favicon) > 0) {
+        $d_sekolah_favicon = mysqli_fetch_assoc($q_sekolah_favicon);
+        if (!empty($d_sekolah_favicon['logo_sekolah']) && file_exists('uploads/'.$d_sekolah_favicon['logo_sekolah'])) {
+            $logo_path = 'uploads/'.$d_sekolah_favicon['logo_sekolah'];
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -44,6 +58,8 @@ if (isset($koneksi)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Aplikasi Rapor Digital</title>
+    <!-- Favicon Dinamis -->
+    <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($logo_path); ?>?v=<?php echo time(); ?>">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">

@@ -153,22 +153,46 @@ if ($aksi == 'tambah') {
     // [MODIFIKASI] Cek dari mana redirect berasal
     $id_kelas_redirect = isset($_GET['id_kelas']) ? (int)$_GET['id_kelas'] : 0; 
 
-    // Hapus data terkait (sesuai file Anda & SQL)
-    mysqli_query($koneksi, "DELETE FROM penilaian_detail_nilai WHERE id_siswa = $id_siswa");
-    mysqli_query($koneksi, "DELETE FROM catatan_guru_wali WHERE id_siswa = $id_siswa");
-    mysqli_query($koneksi, "DELETE FROM ekskul_peserta WHERE id_siswa = $id_siswa");
-    mysqli_query($koneksi, "DELETE FROM kokurikuler_asesmen WHERE id_siswa = $id_siswa");
-    mysqli_query($koneksi, "DELETE FROM mutasi_keluar WHERE id_siswa = $id_siswa");
-    mysqli_query($koneksi, "DELETE FROM mutasi_masuk WHERE id_siswa = $id_siswa");
-
-    $query_hapus = "DELETE FROM siswa WHERE id_siswa = ?";
-    $stmt = mysqli_prepare($koneksi, $query_hapus);
-    mysqli_stmt_bind_param($stmt, "i", $id_siswa);
+    // [SECURITY HARDENING] Strict Protection: Cek apakah siswa sudah memiliki nilai/rapor
+    $cek_rapor = mysqli_prepare($koneksi, "SELECT id_rapor FROM rapor WHERE id_siswa = ? LIMIT 1");
+    mysqli_stmt_bind_param($cek_rapor, "i", $id_siswa);
+    mysqli_stmt_execute($cek_rapor);
+    mysqli_stmt_store_result($cek_rapor);
     
-    if (mysqli_stmt_execute($stmt)) {
-        $_SESSION['pesan'] = "Data siswa dan semua data terkait berhasil dihapus.";
+    if (mysqli_stmt_num_rows($cek_rapor) > 0) {
+        $_SESSION['error'] = json_encode(['icon' => 'error', 'title' => 'Gagal Hapus', 'text' => 'Siswa tidak bisa dihapus karena sudah memiliki riwayat Rapor. Ubah status siswa menjadi "Keluar" atau "Pindah" jika sudah tidak aktif.']);
+        mysqli_stmt_close($cek_rapor);
     } else {
-        $_SESSION['error'] = "Gagal menghapus data siswa.";
+        mysqli_stmt_close($cek_rapor);
+
+        // Hapus data terkait yang aman (belum ada rapor)
+        mysqli_query($koneksi, "DELETE FROM catatan_guru_wali WHERE id_siswa = $id_siswa");
+
+        // [BUG FIX] Hapus nilai dan kehadiran ekskul sebelum menghapus peserta
+        $q_peserta_del = mysqli_query($koneksi, "SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_siswa = $id_siswa");
+        if ($q_peserta_del && mysqli_num_rows($q_peserta_del) > 0) {
+            $list_peserta = [];
+            while ($row = mysqli_fetch_assoc($q_peserta_del)) {
+                $list_peserta[] = $row['id_peserta_ekskul'];
+            }
+            $in_clause = implode(',', $list_peserta);
+            mysqli_query($koneksi, "DELETE FROM ekskul_penilaian WHERE id_peserta_ekskul IN ($in_clause)");
+            mysqli_query($koneksi, "DELETE FROM ekskul_kehadiran WHERE id_peserta_ekskul IN ($in_clause)");
+        }
+        mysqli_query($koneksi, "DELETE FROM ekskul_peserta WHERE id_siswa = $id_siswa");
+        mysqli_query($koneksi, "DELETE FROM kokurikuler_asesmen WHERE id_siswa = $id_siswa");
+        mysqli_query($koneksi, "DELETE FROM mutasi_keluar WHERE id_siswa = $id_siswa");
+        mysqli_query($koneksi, "DELETE FROM mutasi_masuk WHERE id_siswa = $id_siswa");
+
+        $query_hapus = "DELETE FROM siswa WHERE id_siswa = ?";
+        $stmt = mysqli_prepare($koneksi, $query_hapus);
+        mysqli_stmt_bind_param($stmt, "i", $id_siswa);
+
+        if (mysqli_stmt_execute($stmt)) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => 'Data siswa berhasil dihapus secara permanen.']);
+        } else {
+            $_SESSION['error'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Gagal menghapus data siswa.']);
+        }
     }
     
     // [MODIFIKASI] Redirect cerdas
@@ -186,30 +210,60 @@ if ($aksi == 'tambah') {
     $siswa_ids = $_POST['siswa_ids'] ?? [];
     
     if (empty($siswa_ids)) {
-        $_SESSION['error'] = "Tidak ada siswa yang dipilih untuk dihapus.";
+        $_SESSION['error'] = json_encode(['icon' => 'warning', 'title' => 'Peringatan', 'text' => 'Tidak ada siswa yang dipilih untuk dihapus.']);
         header("location:pengguna_tampil.php");
         exit();
     }
 
     $id_list = implode(',', array_map('intval', $siswa_ids));
     
-    // Hapus data terkait (sesuai file Anda & SQL)
-    mysqli_query($koneksi, "DELETE FROM penilaian_detail_nilai WHERE id_siswa IN ($id_list)");
-    mysqli_query($koneksi, "DELETE FROM catatan_guru_wali WHERE id_siswa IN ($id_list)");
-    mysqli_query($koneksi, "DELETE FROM ekskul_peserta WHERE id_siswa IN ($id_list)");
-    mysqli_query($koneksi, "DELETE FROM kokurikuler_asesmen WHERE id_siswa IN ($id_list)");
-    mysqli_query($koneksi, "DELETE FROM mutasi_keluar WHERE id_siswa IN ($id_list)");
-    mysqli_query($koneksi, "DELETE FROM mutasi_masuk WHERE id_siswa IN ($id_list)");
-    
-    // Hapus data siswa
-    $query = "DELETE FROM siswa WHERE id_siswa IN ($id_list)";
-    
-    if(mysqli_query($koneksi, $query)){
-        $jumlah_terhapus = mysqli_affected_rows($koneksi);
-        $_SESSION['pesan'] = "$jumlah_terhapus siswa berhasil dihapus.";
-    } else {
-        $_SESSION['error'] = "Gagal menghapus siswa. Error: " . mysqli_error($koneksi);
+    // [SECURITY HARDENING] Strict Protection: Pisahkan siswa yang bisa dihapus dan yang tidak
+    $query_cek = mysqli_query($koneksi, "SELECT DISTINCT id_siswa FROM rapor WHERE id_siswa IN ($id_list)");
+    $siswa_dengan_rapor = [];
+    while ($row = mysqli_fetch_assoc($query_cek)) {
+        $siswa_dengan_rapor[] = $row['id_siswa'];
     }
+    
+    $siswa_bisa_dihapus = array_diff($siswa_ids, $siswa_dengan_rapor);
+    
+    if (!empty($siswa_bisa_dihapus)) {
+        $id_list_aman = implode(',', array_map('intval', $siswa_bisa_dihapus));
+
+        // Hapus data terkait yang aman
+        mysqli_query($koneksi, "DELETE FROM catatan_guru_wali WHERE id_siswa IN ($id_list_aman)");
+
+        // [BUG FIX] Hapus nilai dan kehadiran ekskul sebelum menghapus peserta
+        $q_peserta_del = mysqli_query($koneksi, "SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_siswa IN ($id_list_aman)");
+        if ($q_peserta_del && mysqli_num_rows($q_peserta_del) > 0) {
+            $list_peserta = [];
+            while ($row = mysqli_fetch_assoc($q_peserta_del)) {
+                $list_peserta[] = $row['id_peserta_ekskul'];
+            }
+            $in_clause = implode(',', $list_peserta);
+            mysqli_query($koneksi, "DELETE FROM ekskul_penilaian WHERE id_peserta_ekskul IN ($in_clause)");
+            mysqli_query($koneksi, "DELETE FROM ekskul_kehadiran WHERE id_peserta_ekskul IN ($in_clause)");
+        }
+        mysqli_query($koneksi, "DELETE FROM ekskul_peserta WHERE id_siswa IN ($id_list_aman)");
+        mysqli_query($koneksi, "DELETE FROM kokurikuler_asesmen WHERE id_siswa IN ($id_list_aman)");
+        mysqli_query($koneksi, "DELETE FROM mutasi_keluar WHERE id_siswa IN ($id_list_aman)");
+        mysqli_query($koneksi, "DELETE FROM mutasi_masuk WHERE id_siswa IN ($id_list_aman)");
+
+        // Hapus data siswa
+        mysqli_query($koneksi, "DELETE FROM siswa WHERE id_siswa IN ($id_list_aman)");
+        $jumlah_terhapus = mysqli_affected_rows($koneksi);
+    } else {
+        $jumlah_terhapus = 0;
+    }
+
+    $jumlah_ditolak = count($siswa_dengan_rapor);
+
+    if ($jumlah_ditolak > 0) {
+        $pesan = "Berhasil menghapus $jumlah_terhapus siswa. Namun, $jumlah_ditolak siswa DITOLAK dihapus karena sudah memiliki riwayat Rapor.";
+        $_SESSION['error'] = json_encode(['icon' => 'warning', 'title' => 'Hapus Sebagian', 'text' => $pesan]);
+    } else {
+        $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => "$jumlah_terhapus siswa berhasil dihapus secara permanen."]);
+    }
+
     header("location:pengguna_tampil.php");
     exit();
 

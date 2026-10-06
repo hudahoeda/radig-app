@@ -27,7 +27,7 @@ if (!$data_mapel) {
 $nama_mapel = $data_mapel['nama_mapel'];
 
 // Ambil semua TP dan kelompokkan berdasarkan Guru
-$query_tp = "SELECT tp.id_tp, tp.semester, tp.kode_tp, tp.deskripsi_tp, g.nama_guru 
+$query_tp = "SELECT tp.id_tp, tp.semester, tp.kode_tp, tp.deskripsi_tp, tp.kktp, g.nama_guru
              FROM tujuan_pembelajaran tp 
              LEFT JOIN guru g ON tp.id_guru_pembuat = g.id_guru
              WHERE tp.id_mapel = ? 
@@ -92,6 +92,7 @@ while ($tp = mysqli_fetch_assoc($result_tp)) {
                                 <th class="text-center" style="width: 5%;">No</th>
                                 <th style="width: 10%;">Semester</th>
                                 <th>Deskripsi TP</th>
+                                <th class="text-center" style="width: 10%;">KKTP</th>
                                 <th class="text-center" style="width: 15%;">Aksi</th>
                             </tr>
                         </thead>
@@ -110,6 +111,7 @@ while ($tp = mysqli_fetch_assoc($result_tp)) {
                                             <small class="d-block text-muted"><?php echo htmlspecialchars($tp['kode_tp']); ?></small>
                                             <?php echo htmlspecialchars($tp['deskripsi_tp']); ?>
                                         </td>
+                                        <td class="text-center fw-bold text-primary"><?php echo htmlspecialchars($tp['kktp'] ?? '75'); ?></td>
                                         <td class="text-center">
                                             <div class="btn-group" role="group">
                                                 <a href="tp_admin_edit.php?id_tp=<?php echo $tp['id_tp']; ?>" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Edit TP (Admin)"><i class="bi bi-pencil-fill"></i></a>

@@ -19,7 +19,12 @@ $semester_text = ($semester_aktif == 1) ? 'Ganjil' : 'Genap';
 // DATA UNTUK KPI CARDS (SESUAI SCREENSHOT)
 // =================================================================================
 // 1. Jumlah Siswa Aktif ("Peserta Didik")
-$query_total_siswa_aktif = mysqli_query($koneksi, "SELECT COUNT(id_siswa) as total FROM siswa WHERE status_siswa = 'Aktif'");
+$query_total_siswa_aktif = mysqli_query($koneksi, "
+    SELECT COUNT(s.id_siswa) as total
+    FROM siswa s
+    JOIN kelas k ON s.id_kelas = k.id_kelas
+    WHERE s.status_siswa = 'Aktif' AND k.id_tahun_ajaran = '$id_tahun_ajaran_aktif'
+");
 $total_siswa_aktif = mysqli_fetch_assoc($query_total_siswa_aktif)['total'] ?? 0;
 
 // 2. Jumlah Guru Aktif ("GTK")

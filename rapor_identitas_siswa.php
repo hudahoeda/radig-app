@@ -21,7 +21,7 @@ if(mysqli_num_rows($result_siswa) == 0) die("Error: Data siswa tidak ditemukan."
 $siswa = mysqli_fetch_assoc($result_siswa);
 
 // Ambil Data Sekolah
-$q_sekolah = mysqli_query($koneksi, "SELECT nama_sekolah, nama_kepsek, nip_kepsek, kabupaten_kota FROM sekolah WHERE id_sekolah = 1");
+$q_sekolah = mysqli_query($koneksi, "SELECT nama_sekolah, nama_kepsek, nip_kepsek, kabupaten_kota FROM sekolah LIMIT 1");
 $sekolah = mysqli_fetch_assoc($q_sekolah);
 
 // Ukuran Kertas

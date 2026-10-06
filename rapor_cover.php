@@ -22,7 +22,7 @@ $ukuran_kertas = $pengaturan['rapor_ukuran_kertas'] ?? 'A4';
 // =======================================================================
 // 2. DATA SEKOLAH & JENJANG
 // =======================================================================
-$q_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
+$q_sekolah = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
 $sekolah = mysqli_fetch_assoc($q_sekolah);
 if (!$sekolah) die("Error: Data sekolah tidak ditemukan.");
 
@@ -51,9 +51,12 @@ function get_img_base64_local($path) {
 }
 
 // Persiapan Logo
+$logo_kiri = $pengaturan['logo_kiri'] ?? 'logo_kabupaten.png';
 $logo_kab_html = '';
-if (file_exists('uploads/logo_kabupaten.png')) {
-    $img_kab = get_img_base64_local('uploads/logo_kabupaten.png');
+$path_kiri = 'uploads/' . $logo_kiri;
+if (!file_exists($path_kiri)) $path_kiri = 'uploads/logo_kabupaten.png';
+if (file_exists($path_kiri)) {
+    $img_kab = get_img_base64_local($path_kiri);
     if($img_kab) $logo_kab_html = '<img src="'.$img_kab.'" style="height: 120px; width: auto;">';
 }
 

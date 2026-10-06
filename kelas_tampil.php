@@ -42,7 +42,7 @@ $query_kelas = "
         k.id_kelas, k.nama_kelas, k.fase, 
         g.nama_guru, 
         ta.tahun_ajaran,
-        (SELECT COUNT(id_siswa) FROM siswa s WHERE s.id_kelas = k.id_kelas) as jumlah_siswa
+        (SELECT COUNT(DISTINCT s.id_siswa) FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE s.id_kelas = k.id_kelas OR r.id_kelas = k.id_kelas) as jumlah_siswa
     FROM kelas k 
     LEFT JOIN guru g ON k.id_wali_kelas = g.id_guru 
     LEFT JOIN tahun_ajaran ta ON k.id_tahun_ajaran = ta.id_tahun_ajaran 

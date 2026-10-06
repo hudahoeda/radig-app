@@ -32,6 +32,38 @@ function parseColumnLine($line) {
     return $line;
 }
 
+// Fungsi split SQL yang aman (mengabaikan koma dalam tanda kutip dan kurung)
+function splitSqlLinesSafe($sql) {
+    $lines = [];
+    $current = '';
+    $inQuotes = false;
+    $parenDepth = 0;
+    $len = strlen($sql);
+    for ($i = 0; $i < $len; $i++) {
+        $char = $sql[$i];
+        if ($char == "'") {
+            // Cek escape character
+            if ($i == 0 || $sql[$i-1] != '\\') {
+                $inQuotes = !$inQuotes;
+            }
+        } elseif ($char == '(' && !$inQuotes) {
+            $parenDepth++;
+        } elseif ($char == ')' && !$inQuotes) {
+            $parenDepth--;
+        } elseif ($char == ',' && !$inQuotes && $parenDepth == 0) {
+            $lines[] = $current;
+            $current = '';
+            continue;
+        }
+        $current .= $char;
+    }
+    if (trim($current) !== '') {
+        $lines[] = $current;
+    }
+    return $lines;
+}
+
+
 if (isset($_POST['btn_sync'])) {
     // Cek keberadaan file koneksi dan file SQL
     if (file_exists('koneksi.php')) {
@@ -80,10 +112,8 @@ if (isset($_POST['btn_sync'])) {
                             $existingColumns[] = strtolower($row['Field']);
                         }
 
-                        // Pecah body SQL menjadi baris-baris definisi
-                        // Regex ini memisahkan berdasarkan koma, TAPI mengabaikan koma di dalam kurung (...)
-                        // Contoh: enum('a','b') tidak akan terpecah
-                        $lines = preg_split("/,(?![^()]*\))/", $tableBody); 
+                        // Pecah body SQL menggunakan parser kustom yang lebih aman
+                        $lines = splitSqlLinesSafe($tableBody);
 
                         foreach ($lines as $line) {
                             $line = trim($line);
@@ -104,11 +134,15 @@ if (isset($_POST['btn_sync'])) {
                                     $definition = parseColumnLine($line);
                                     $alterQuery = "ALTER TABLE `$tableName` ADD $definition";
                                     
-                                    if ($db->query($alterQuery)) {
-                                        $logs[] = "<div class='alert alert-warning'>[COLUMN] Menambahkan kolom <b>$colName</b> ke tabel <b>$tableName</b>.</div>";
-                                        $updates_count++;
-                                    } else {
-                                        $logs[] = "<div class='alert alert-danger'>[ERROR] Gagal alter tabel $tableName (kolom $colName): " . $db->error . "</div>";
+                                    try {
+                                        if ($db->query($alterQuery)) {
+                                            $logs[] = "<div class='alert alert-warning'>[COLUMN] Menambahkan kolom <b>$colName</b> ke tabel <b>$tableName</b>.</div>";
+                                            $updates_count++;
+                                        } else {
+                                            $logs[] = "<div class='alert alert-danger'>[ERROR] Gagal alter tabel $tableName (kolom $colName): " . $db->error . "</div>";
+                                        }
+                                    } catch (mysqli_sql_exception $e) {
+                                        $logs[] = "<div class='alert alert-danger'>[ERROR] Gagal alter tabel $tableName (kolom $colName): " . $e->getMessage() . "</div>";
                                     }
                                 }
                             }

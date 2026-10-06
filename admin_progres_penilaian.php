@@ -34,8 +34,8 @@ function get_relevant_agama($nama_mapel) {
     if (stripos($nama_mapel, 'kristen') !== false) return 'Kristen';
     if (stripos($nama_mapel, 'katolik') !== false) return 'Katolik';
     if (stripos($nama_mapel, 'hindu') !== false) return 'Hindu';
-    if (stripos($nama_mapel, 'budha') !== false) return 'Budha';
-    if (stripos($nama_mapel, 'konghucu') !== false) return 'Konghucu';
+    if (stripos($nama_mapel, 'budha') !== false || stripos($nama_mapel, 'buddha') !== false) return 'Buddha';
+    if (stripos($nama_mapel, 'konghucu') !== false || stripos($nama_mapel, 'khonghucu') !== false) return 'Khonghucu';
     return null; 
 }
 
@@ -45,76 +45,80 @@ function get_relevant_siswa_count($koneksi, $id_kelas, $id_mapel) {
     $nama_mapel = mysqli_fetch_assoc($q_mapel)['nama_mapel'] ?? '';
     $relevant_agama = get_relevant_agama($nama_mapel);
 
-    $siswa_where = "id_kelas = $id_kelas AND status_siswa = 'Aktif'";
+    $siswa_where = "(s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)";
     if ($relevant_agama) {
-        $siswa_where .= " AND agama = '" . mysqli_real_escape_string($koneksi, $relevant_agama) . "'";
+        if ($relevant_agama == 'Buddha') {
+            $siswa_where .= " AND (s.agama = 'Buddha' OR s.agama = 'Budha')";
+        } elseif ($relevant_agama == 'Khonghucu') {
+            $siswa_where .= " AND (s.agama = 'Khonghucu' OR s.agama = 'Konghucu')";
+        } else {
+            $siswa_where .= " AND s.agama = '" . mysqli_real_escape_string($koneksi, $relevant_agama) . "'";
+        }
     }
-    $q_count = mysqli_query($koneksi, "SELECT COUNT(*) as total FROM siswa WHERE $siswa_where");
+    $q_count = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as total FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE $siswa_where");
     return mysqli_fetch_assoc($q_count)['total'] ?? 0;
 }
 
 // ==========================================================
 // 2. LOGIKA STATISTIK GLOBAL
 // ==========================================================
-$labels_mapel = [];
-$persen_mapel = [];
-$global_total_nilai_terinput = 0;
-$global_target_total_nilai = 0;
+$chart_data_kelas = [];
 
-$query_semua_mapel = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel FROM mata_pelajaran ORDER BY urutan ASC");
+$query_kelas = mysqli_query($koneksi, "SELECT id_kelas, nama_kelas FROM kelas WHERE id_tahun_ajaran = $id_tahun_ajaran_aktif ORDER BY nama_kelas ASC");
 
-while ($mapel_global = mysqli_fetch_assoc($query_semua_mapel)) {
-    $id_mapel_global = $mapel_global['id_mapel'];
-    $nama_mapel_global = $mapel_global['nama_mapel'];
-    $relevant_agama_global = get_relevant_agama($nama_mapel_global);
-
-    $q_kelas_ajar = mysqli_query($koneksi, "
-        SELECT DISTINCT k.id_kelas
-        FROM kelas k
-        JOIN guru_mengajar gm ON k.id_kelas = gm.id_kelas
-        WHERE gm.id_mapel = $id_mapel_global AND k.id_tahun_ajaran = $id_tahun_ajaran_aktif
-    ");
+while ($k = mysqli_fetch_assoc($query_kelas)) {
+    $id_kelas = $k['id_kelas'];
+    $nama_kelas = $k['nama_kelas'];
     
-    $mapel_target = 0;
-    $mapel_realisasi = 0;
+    $kelas_target = 0;
+    $kelas_realisasi = 0;
 
-    while($kelas_ajar = mysqli_fetch_assoc($q_kelas_ajar)) {
-        $id_kelas = $kelas_ajar['id_kelas'];
-        
-        // Asesmen Sumatif
+    $q_mapel_ajar = mysqli_query($koneksi, "
+        SELECT gm.id_mapel, m.nama_mapel
+        FROM guru_mengajar gm
+        JOIN mata_pelajaran m ON gm.id_mapel = m.id_mapel
+        WHERE gm.id_kelas = $id_kelas AND gm.id_tahun_ajaran = $id_tahun_ajaran_aktif
+    ");
+
+    while($mapel = mysqli_fetch_assoc($q_mapel_ajar)) {
+        $id_mapel = $mapel['id_mapel'];
+        $relevant_agama = get_relevant_agama($mapel['nama_mapel']);
+        $relevant_siswa_count = get_relevant_siswa_count($koneksi, $id_kelas, $id_mapel);
+
         $q_jml_asesmen = mysqli_query($koneksi, "
             SELECT COUNT(id_penilaian) as jml_asesmen FROM penilaian 
-            WHERE id_mapel = $id_mapel_global AND id_kelas = $id_kelas
+            WHERE id_mapel = $id_mapel AND id_kelas = $id_kelas
             AND semester = $semester_aktif AND jenis_penilaian = 'Sumatif'
         ");
         $jml_asesmen = mysqli_fetch_assoc($q_jml_asesmen)['jml_asesmen'];
 
-        $relevant_siswa_count = get_relevant_siswa_count($koneksi, $id_kelas, $id_mapel_global);
-        $target_kelas = $jml_asesmen * $relevant_siswa_count;
-        $mapel_target += $target_kelas;
+        $target_mapel = $jml_asesmen * $relevant_siswa_count;
+        $kelas_target += $target_mapel;
 
-        // Realisasi
         $q_realisasi_kelas_str = "
             SELECT COUNT(pdn.id_detail_nilai) as total 
             FROM penilaian_detail_nilai pdn 
             JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian
             JOIN siswa s ON pdn.id_siswa = s.id_siswa
-            WHERE p.id_mapel = $id_mapel_global AND p.id_kelas = $id_kelas 
+            WHERE p.id_mapel = $id_mapel AND p.id_kelas = $id_kelas
             AND p.semester = $semester_aktif AND p.jenis_penilaian = 'Sumatif'
-            AND s.status_siswa = 'Aktif' " . ($relevant_agama_global ? "AND s.agama = '$relevant_agama_global'" : "") . "
+            " . ($relevant_agama ? "AND s.agama = '$relevant_agama'" : "") . "
         ";
         $q_realisasi_kelas = mysqli_query($koneksi, $q_realisasi_kelas_str);
-        $realisasi_kelas = mysqli_fetch_assoc($q_realisasi_kelas)['total'];
-        $mapel_realisasi += $realisasi_kelas;
+        $realisasi_mapel = mysqli_fetch_assoc($q_realisasi_kelas)['total'];
+
+        $kelas_realisasi += $realisasi_mapel;
     }
 
-    if ($mapel_target > 0) {
-        $persen = round(($mapel_realisasi / $mapel_target) * 100);
-        $labels_mapel[] = $mapel_global['nama_mapel'];
-        $persen_mapel[] = min(100, $persen);
-        $global_target_total_nilai += $mapel_target;
-        $global_total_nilai_terinput += $mapel_realisasi;
-    }
+    $persen_kelas = ($kelas_target > 0) ? round(($kelas_realisasi / $kelas_target) * 100) : 0;
+
+    $chart_data_kelas[] = [
+        'nama_kelas' => $nama_kelas,
+        'persen' => min(100, $persen_kelas)
+    ];
+
+    $global_target_total_nilai += $kelas_target;
+    $global_total_nilai_terinput += $kelas_realisasi;
 }
 
 $persentase_global = ($global_target_total_nilai > 0) ? round(($global_total_nilai_terinput / $global_target_total_nilai) * 100) : 0;
@@ -180,11 +184,18 @@ $persentase_global = min(100, $persentase_global);
 <div class="container-fluid">
 
     <!-- PAGE HEADER -->
-    <div class="page-header text-white mb-4 shadow">
-        <h1 class="mb-1">Dashboard Progres Penilaian</h1>
-        <p class="lead mb-0 opacity-75">
-            Monitoring input nilai Sumatif seluruh kelas | TA: <b><?php echo $tahun_ajaran_label; ?></b> (Semester <?php echo $semester_aktif; ?>)
-        </p>
+    <div class="page-header text-white mb-4 shadow d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h1 class="mb-1">Dashboard Progres Penilaian</h1>
+            <p class="lead mb-0 opacity-75">
+                Monitoring input nilai Sumatif seluruh kelas | TA: <b><?php echo $tahun_ajaran_label; ?></b> (Semester <?php echo $semester_aktif; ?>)
+            </p>
+        </div>
+        <div>
+            <button class="btn btn-light text-primary fw-bold px-4 py-2 shadow-sm rounded-pill" data-bs-toggle="modal" data-bs-target="#modalRekapWA">
+                <i class="bi bi-whatsapp me-2 text-success"></i>Rekap (WA & PDF)
+            </button>
+        </div>
     </div>
 
     <!-- STATS CARDS ROW -->
@@ -250,11 +261,18 @@ $persentase_global = min(100, $persentase_global);
     <!-- CHART SECTION -->
     <div class="card shadow mb-4">
         <div class="card-header py-3 bg-white d-flex flex-row align-items-center justify-content-between">
-            <h6 class="m-0 fw-bold text-primary"><i class="bi bi-bar-chart-fill me-2"></i>Sebaran Progres per Mata Pelajaran</h6>
+            <h6 class="m-0 fw-bold text-primary"><i class="bi bi-pie-chart-fill me-2"></i>Progres Penilaian per Kelas</h6>
         </div>
         <div class="card-body">
-            <div style="height: 350px; position: relative;">
-                <canvas id="chartMapel"></canvas>
+            <div class="row g-4">
+                <?php foreach($chart_data_kelas as $idx => $c): ?>
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 text-center">
+                    <h6 class="fw-bold text-dark mb-2"><?php echo $c['nama_kelas']; ?></h6>
+                    <div style="height: 140px; position: relative;">
+                        <canvas id="chartKelas_<?php echo $idx; ?>"></canvas>
+                    </div>
+                </div>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>
@@ -279,7 +297,7 @@ $persentase_global = min(100, $persentase_global);
                     $count = 0;
                     while($kelas = mysqli_fetch_assoc($q_kelas)):
                         $id_kelas = $kelas['id_kelas'];
-                        $q_siswa = mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'");
+                        $q_siswa = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as jml FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)");
                         $jml_siswa_total = mysqli_fetch_assoc($q_siswa)['jml'];
                 ?>
                 <div class="accordion-item">
@@ -344,13 +362,30 @@ $persentase_global = min(100, $persentase_global);
                                                     JOIN siswa s ON pdn.id_siswa = s.id_siswa
                                                     WHERE p.id_kelas = $id_kelas AND p.id_mapel = $id_mapel 
                                                     AND p.semester = $semester_aktif AND p.jenis_penilaian = 'Sumatif'
-                                                    AND s.status_siswa = 'Aktif' " . ($relevant_agama ? "AND s.agama = '$relevant_agama'" : "");
+                                                    " . ($relevant_agama ? "AND s.agama = '$relevant_agama'" : "");
                                                 $q_nilai = mysqli_query($koneksi, $q_nilai_masuk_str);
                                                 $jml_masuk = mysqli_fetch_assoc($q_nilai)['jml_masuk'];
 
                                                 $persen = ($target_nilai > 0) ? round(($jml_masuk / $target_nilai) * 100) : 0;
                                                 $persen = min(100, $persen);
                                                 
+                                                // Simpan ke rekap jika belum selesai atau kosong
+                                                if ($persen < 100 && $target_nilai > 0) {
+                                                    $rekap_belum_selesai[$kelas['nama_kelas']][] = [
+                                                        'mapel' => $mapel['nama_mapel'],
+                                                        'guru' => $mapel['nama_guru'],
+                                                        'persen' => $persen,
+                                                        'kurang' => ($target_nilai - $jml_masuk) . " nilai lagi"
+                                                    ];
+                                                } elseif ($jml_asesmen == 0 && $relevant_siswa_count > 0) {
+                                                    $rekap_belum_selesai[$kelas['nama_kelas']][] = [
+                                                        'mapel' => $mapel['nama_mapel'],
+                                                        'guru' => $mapel['nama_guru'],
+                                                        'persen' => 0,
+                                                        'kurang' => "Belum ada penilaian dibuat"
+                                                    ];
+                                                }
+
                                                 // Tentukan Warna & Status
                                                 $status_class = 'bg-primary'; $status_txt = 'Proses';
                                                 // Progress bar color mapping
@@ -499,6 +534,57 @@ $persentase_global = min(100, $persentase_global);
     </div>
 </div>
 
+<?php
+// Generate Teks WA
+$teks_wa = "*PENGUMUMAN PROGRESS PENILAIAN RAPOR*\n";
+$teks_wa .= "Semester: $semester_aktif | Tahun Ajaran: $tahun_ajaran_label\n\n";
+$teks_wa .= "Berikut adalah daftar Mata Pelajaran yang *BELUM 100%* menyelesaikan input nilai sumatif. Mohon segera diselesaikan:\n\n";
+
+if (empty($rekap_belum_selesai)) {
+    $teks_wa .= "🎉 Alhamdulillah, semua mapel di seluruh kelas sudah 100% selesai!\n";
+} else {
+    foreach ($rekap_belum_selesai as $nama_kelas => $list_mapel) {
+        $teks_wa .= "*KELAS $nama_kelas*\n";
+        foreach ($list_mapel as $m) {
+            $teks_wa .= "❌ " . $m['mapel'] . " (" . $m['guru'] . ") - Progres: " . $m['persen'] . "% (" . $m['kurang'] . ")\n";
+        }
+        $teks_wa .= "\n";
+    }
+}
+$teks_wa .= "Terima kasih atas kerjasamanya. 🙏";
+?>
+
+<!-- MODAL REKAP WA & PDF -->
+<div class="modal fade" id="modalRekapWA" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-teal-subtle text-primary border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-whatsapp me-2 text-success"></i>Rekap Progres Belum Selesai</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0 text-dark">Teks Siap Salin (Copy-Paste) ke Grup WA:</h6>
+                    <button class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="copyToWA()">
+                        <i class="bi bi-clipboard me-1"></i>Salin Teks
+                    </button>
+                </div>
+                <textarea id="teksRekapWA" class="form-control border-success mb-4" rows="12" readonly style="font-family: monospace; font-size: 0.9rem; background-color: #f8f9fc; resize: none;"><?php echo htmlspecialchars($teks_wa); ?></textarea>
+
+                <div class="alert border-primary bg-primary bg-opacity-10 mb-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-info-circle-fill text-primary me-2"></i>
+                        <strong>Butuh laporan formal?</strong> Unduh versi cetak resmi.
+                    </div>
+                    <a href="admin_progres_penilaian_pdf.php" target="_blank" class="btn btn-primary fw-bold px-4 rounded-pill shadow-sm">
+                        <i class="bi bi-file-earmark-pdf-fill me-2"></i>Download PDF
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -519,32 +605,66 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // --- CHART (Warna Teal) ---
-    const ctx = document.getElementById('chartMapel');
-    if (ctx) {
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: <?php echo json_encode($labels_mapel); ?>,
-                datasets: [{
-                    label: 'Input (%)',
-                    data: <?php echo json_encode($persen_mapel); ?>,
-                    backgroundColor: '#009688', // Teal
-                    borderRadius: 4,
-                    barPercentage: 0.6
-                }]
-            },
-            options: {
-                maintainAspectRatio: false,
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true, max: 100, grid: { borderDash: [2] } },
-                    x: { grid: { display: false } }
+    // --- CHART DONUT (Warna Teal) ---
+    const chartData = <?php echo json_encode($chart_data_kelas); ?>;
+
+    // Plugin kustom untuk teks di tengah Doughnut Chart
+    const centerTextPlugin = {
+        id: 'centerText',
+        beforeDraw: function(chart) {
+            if (chart.config.type !== 'doughnut') return;
+            const width = chart.width,
+                  height = chart.height,
+                  ctx = chart.ctx;
+            ctx.restore();
+            const fontSize = (height / 80).toFixed(2);
+            ctx.font = "bold " + fontSize + "em sans-serif";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#333";
+
+            const text = chart.config.data.datasets[0].data[0] + "%";
+            const textX = Math.round((width - ctx.measureText(text).width) / 2);
+            const textY = height / 2;
+
+            ctx.fillText(text, textX, textY);
+            ctx.save();
+        }
+    };
+
+    Chart.register(centerTextPlugin);
+
+    chartData.forEach((item, index) => {
+        const ctx = document.getElementById('chartKelas_' + index);
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Selesai (%)', 'Belum (%)'],
+                    datasets: [{
+                        data: [item.persen, 100 - item.persen],
+                        backgroundColor: ['#009688', '#e0e0e0'], // Teal dan abu muda
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
                 },
-                plugins: { legend: { display: false } }
-            }
-        });
-    }
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    cutout: '75%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.parsed + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
 
     // --- MODAL AJAX ---
     const detailModal = document.getElementById('detailNilaiModalAdmin');
@@ -622,6 +742,22 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
+
+    // Fungsi Copy to WA
+    window.copyToWA = function() {
+        const copyText = document.getElementById("teksRekapWA");
+        copyText.select();
+        copyText.setSelectionRange(0, 99999); /* For mobile devices */
+        document.execCommand("copy");
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Tersalin!',
+            text: 'Teks laporan berhasil disalin. Silakan paste di grup WhatsApp.',
+            timer: 2000,
+            showConfirmButton: false
+        });
+    };
 });
 </script>
 

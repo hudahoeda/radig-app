@@ -442,7 +442,13 @@ if (!empty($daftar_ekskul)) {
 
 <?php
 if (isset($_SESSION['pesan'])) {
-    echo "<script>Swal.fire('Berhasil!', '" . addslashes($_SESSION['pesan']) . "', 'success');</script>";
+    $pesan_raw = $_SESSION['pesan'];
+    $pesan_data = json_decode($pesan_raw, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($pesan_data)) {
+        echo "<script>Swal.fire({icon: '".addslashes($pesan_data['icon'] ?? 'info')."', title: '".addslashes($pesan_data['title'] ?? 'Info')."', text: '".addslashes($pesan_data['text'] ?? '')."'});</script>";
+    } else {
+        echo "<script>Swal.fire('Informasi', '" . addslashes($pesan_raw) . "', 'info');</script>";
+    }
     unset($_SESSION['pesan']);
 }
 if (isset($_SESSION['error'])) {

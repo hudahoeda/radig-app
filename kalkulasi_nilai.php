@@ -16,7 +16,8 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
     // Query 1: Mengambil Sumatif yang terkait Tujuan Pembelajaran (TP)
     $stmt_sumatif_tp = mysqli_prepare($koneksi, "
         SELECT p.nama_penilaian, p.subjenis_penilaian, pdn.nilai, p.bobot_penilaian, 
-                GROUP_CONCAT(tp.deskripsi_tp SEPARATOR '|||') as deskripsi_tps
+                GROUP_CONCAT(tp.deskripsi_tp SEPARATOR '|||') as deskripsi_tps,
+                GROUP_CONCAT(tp.kktp SEPARATOR '|||') as kktp_tps
         FROM penilaian_detail_nilai pdn
         JOIN penilaian p ON pdn.id_penilaian = p.id_penilaian
         JOIN penilaian_tp ptp ON p.id_penilaian = ptp.id_penilaian
@@ -51,9 +52,11 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
             $result_sumatif_tp = mysqli_stmt_get_result($stmt_sumatif_tp);
             while ($d_nilai = mysqli_fetch_assoc($result_sumatif_tp)) {
                 $tps_individu = explode('|||', $d_nilai['deskripsi_tps']);
-                foreach($tps_individu as $desc_tp) {
-                    if (!isset($skor_per_tp[$desc_tp])) { $skor_per_tp[$desc_tp] = []; }
-                    $skor_per_tp[$desc_tp][] = $d_nilai['nilai'];
+                $kktps_individu = explode('|||', $d_nilai['kktp_tps'] ?? '');
+                foreach($tps_individu as $idx => $desc_tp) {
+                    $kktp_val = isset($kktps_individu[$idx]) && is_numeric($kktps_individu[$idx]) ? (int)$kktps_individu[$idx] : 75;
+                    if (!isset($skor_per_tp[$desc_tp])) { $skor_per_tp[$desc_tp] = ['skor' => [], 'kktp' => $kktp_val]; }
+                    $skor_per_tp[$desc_tp]['skor'][] = $d_nilai['nilai'];
                 }
                 $komponen_nilai[] = [
                     'nama' => $d_nilai['nama_penilaian'], 'jenis' => $d_nilai['subjenis_penilaian'],
@@ -101,28 +104,36 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
             $rekap_tp = [];
             $kata_hapus = ['Peserta didik dapat', 'Peserta didik mampu', 'peserta didik mampu', 'siswa dapat', 'siswa mampu', 'mampu', 'memahami', 'menguasai', 'menjelaskan', 'menganalisis', 'mengidentifikasi', 'menentukan', 'menunjukkan'];
 
-            foreach ($skor_per_tp as $deskripsi => $skor_array) {
-                $avg = array_sum($skor_array) / count($skor_array);
+            foreach ($skor_per_tp as $deskripsi => $data_tp) {
+                $avg = array_sum($data_tp['skor']) / count($data_tp['skor']);
+                $kktp_tp = $data_tp['kktp'];
                 
                 $desc_clean = trim(str_ireplace($kata_hapus, '', $deskripsi));
                 $desc_clean = preg_replace('/\s+/', ' ', $desc_clean); 
                 $desc_clean = lcfirst($desc_clean);
 
                 if (!isset($rekap_tp[$desc_clean]) || $rekap_tp[$desc_clean]['avg'] < $avg) {
-                     $rekap_tp[$desc_clean] = ['avg' => $avg, 'original_desc' => $deskripsi];
+                     $rekap_tp[$desc_clean] = ['avg' => $avg, 'original_desc' => $deskripsi, 'kktp' => $kktp_tp];
                 }
             }
 
             $tp_lulus = [];
             $tp_remedi = [];
+            $total_kktp_mapel = 0;
+            $count_kktp_mapel = 0;
 
             foreach ($rekap_tp as $clean_desc => $data) {
-                if ($data['avg'] >= $kkm) {
-                    $tp_lulus[$clean_desc] = $data['avg'];
+                $total_kktp_mapel += $data['kktp'];
+                $count_kktp_mapel++;
+                $selisih = $data['avg'] - $data['kktp'];
+
+                if ($data['avg'] >= $data['kktp']) {
+                    $tp_lulus[$clean_desc] = $selisih;
                 } else {
-                    $tp_remedi[$clean_desc] = $data['avg'];
+                    $tp_remedi[$clean_desc] = $selisih;
                 }
             }
+            $rata_rata_kktp = $count_kktp_mapel > 0 ? round($total_kktp_mapel / $count_kktp_mapel) : $kkm;
 
             arsort($tp_lulus); 
             asort($tp_remedi); 
@@ -133,8 +144,16 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
             $deskripsi_draf = "";
             
             if (!empty($top_tp)) {
-                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
-            } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
+                $top_score = reset($tp_lulus);
+                if ($top_score >= 90) {
+                    $predikat_teks = "sangat baik";
+                } elseif ($top_score >= 80) {
+                    $predikat_teks = "baik";
+                } else {
+                    $predikat_teks = "cukup baik";
+                }
+                $deskripsi_draf .= "Menunjukkan penguasaan yang $predikat_teks dalam " . implode(', ', $top_tp) . ". ";
+            } elseif ($nilai_akhir >= $rata_rata_kktp && empty($top_tp)) {
                 $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
             }
             
@@ -146,9 +165,9 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
 
             $deskripsi_final = ucfirst(trim($deskripsi_draf));
 
-        } elseif ($nilai_akhir !== null && $nilai_akhir >= $kkm) {
+        } elseif ($nilai_akhir !== null && $nilai_akhir >= $rata_rata_kktp) {
             $deskripsi_final = 'Capaian kompetensi secara umum sudah menunjukkan ketuntasan yang baik.';
-        } elseif ($nilai_akhir !== null && $nilai_akhir < $kkm) {
+        } elseif ($nilai_akhir !== null && $nilai_akhir < $rata_rata_kktp) {
             $deskripsi_final = 'Perlu ditingkatkan lagi pada beberapa tujuan pembelajaran untuk mencapai ketuntasan minimum.';
         } else {
             $deskripsi_final = 'Data penilaian belum lengkap atau belum ada penilaian sumatif yang diinput.';

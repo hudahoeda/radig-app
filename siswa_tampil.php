@@ -100,25 +100,80 @@ $jumlah_siswa = mysqli_num_rows($query_siswa);
     
     .card { border: none; border-radius: 1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.05); overflow: hidden; }
     .card-header { background-color: white; padding: 1.5rem; border-bottom: 1px solid #edf2f7; }
-    .table thead th { 
-        background-color: #f8fafc; 
+
+    /* Sticky Header CSS Override untuk DataTables */
+    .table-container {
+        max-height: 65vh;
+        overflow-y: auto;
+    }
+    .table-container::-webkit-scrollbar { width: 6px; }
+    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
+    .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+    .table thead th,
+    table.dataTable thead th,
+    table.dataTable thead th.sorting,
+    table.dataTable thead th.sorting_asc,
+    table.dataTable thead th.sorting_desc {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 10 !important;
+        background-color: #f8fafc !important;
         color: #64748b; 
         font-weight: 600; 
         text-transform: uppercase; 
         font-size: 0.85rem; 
         padding: 1rem;
-        border-bottom: 2px solid #e2e8f0;
+        box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+        border-bottom: none !important;
     }
     .table tbody td { padding: 1rem; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
     .table tbody tr:hover { background-color: #f8fafc; }
     
-    .btn-action {
+    /* Styling Dropdown Aksi 3 Titik */
+    .btn-action-dots {
         width: 32px; height: 32px; 
         display: inline-flex; align-items: center; justify-content: center;
-        border-radius: 0.5rem; transition: all 0.2s;
+        border-radius: 50%; transition: all 0.2s; background: #f8fafc; border: 1px solid #e2e8f0; color: #475569;
     }
-    .btn-action:hover { transform: translateY(-2px); box-shadow: 0 3px 6px rgba(0,0,0,0.1); }
+    .btn-action-dots:hover, .btn-action-dots:focus {
+        background: #e2e8f0; transform: translateY(-2px); box-shadow: 0 3px 6px rgba(0,0,0,0.05); color: #0f172a;
+    }
+    .dropdown-action-menu {
+        border: none;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        padding: 0.5rem;
+    }
+    .dropdown-action-menu .dropdown-item {
+        border-radius: 8px;
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .dropdown-action-menu .dropdown-item:hover {
+        background-color: #f1f5f9;
+        transform: translateX(3px);
+    }
+    .dropdown-action-menu .dropdown-item.text-danger:hover {
+        background-color: #fef2f2;
+    }
+
+    /* DataTables Customization */
+    div.dataTables_wrapper div.dataTables_filter input {
+        border-radius: 20px;
+        border: 1px solid #cbd5e1;
+        padding: 0.4rem 1rem;
+    }
+    div.dataTables_wrapper div.dataTables_length select {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+    }
 </style>
+
+<!-- Tambahan DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 
 <div class="container-fluid">
     <div class="page-header text-white mb-4">
@@ -164,18 +219,17 @@ $jumlah_siswa = mysqli_num_rows($query_siswa);
             <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-list-ul me-2 text-primary"></i>Daftar Siswa</h5>
             <!-- Optional: Add Search within class functionality here later -->
         </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-students align-middle mb-0">
+        <div class="card-body p-3">
+            <div class="table-container">
+                <table id="tabelSiswa" class="table table-students align-middle mb-0 w-100">
                     <thead>
                         <tr>
-                            <th class="text-center" style="width: 60px;">No</th>
-                            <th class="ps-3" style="width: 70px;">Foto</th>
+                            <th class="text-center" style="width: 50px;">No</th>
+                            <th class="text-center" style="width: 70px;">Foto</th>
                             <th class="ps-3">Nama Lengkap</th>
                             <th>NIS</th>
                             <th>NISN</th>
-                            <!-- <TH> Guru Wali Dihapus dari sini -->
-                            <th class="text-center" style="width: 120px;">Aksi</th>
+                            <th class="text-center" style="width: 80px;">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -204,13 +258,23 @@ $jumlah_siswa = mysqli_num_rows($query_siswa);
                                 <td class="text-muted fw-medium"><?php echo htmlspecialchars($siswa['nisn']); ?></td>
                                 <!-- Kolom data Guru Wali Dihapus dari sini -->
                                 <td class="text-center">
-                                    <div class="d-flex justify-content-center gap-2">
-                                        <a href="siswa_edit.php?id=<?php echo $siswa['id_siswa']; ?>" class="btn btn-warning btn-sm btn-action text-white" data-bs-toggle="tooltip" title="Edit Data">
-                                            <i class="bi bi-pencil-fill" style="font-size: 0.9rem;"></i>
-                                        </a>
-                                        <button onclick="hapusSiswa(<?php echo $siswa['id_siswa']; ?>, <?php echo $id_kelas; ?>, '<?php echo addslashes($siswa['nama_lengkap']); ?>')" class="btn btn-danger btn-sm btn-action" data-bs-toggle="tooltip" title="Hapus Siswa">
-                                            <i class="bi bi-trash-fill" style="font-size: 0.9rem;"></i>
+                                    <div class="dropdown">
+                                        <button class="btn-action-dots" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-bs-offset="0,5">
+                                            <i class="bi bi-three-dots-vertical"></i>
                                         </button>
+                                        <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
+                                            <li>
+                                                <a class="dropdown-item text-warning" href="siswa_edit.php?id=<?php echo $siswa['id_siswa']; ?>&id_kelas=<?php echo $id_kelas; ?>">
+                                                    <i class="bi bi-pencil-square me-2"></i> Edit Data
+                                                </a>
+                                            </li>
+                                            <li><hr class="dropdown-divider my-1"></li>
+                                            <li>
+                                                <a class="dropdown-item text-danger" href="#" onclick="hapusSiswa(<?php echo $siswa['id_siswa']; ?>, <?php echo $id_kelas; ?>, '<?php echo addslashes($siswa['nama_lengkap']); ?>'); return false;">
+                                                    <i class="bi bi-trash me-2"></i> Hapus
+                                                </a>
+                                            </li>
+                                        </ul>
                                     </div>
                                 </td>
                             </tr>
@@ -234,9 +298,23 @@ $jumlah_siswa = mysqli_num_rows($query_siswa);
     </div>
 </div>
 
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
-// Inisialisasi Tooltip
 document.addEventListener('DOMContentLoaded', function () {
+    // Inisialisasi DataTables
+    $('#tabelSiswa').DataTable({
+        language: {
+            url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/id.json',
+        },
+        pageLength: 25,
+        dom: '<"row align-items-center mb-3"<"col-md-6"l><"col-md-6"f>>rt<"row align-items-center mt-3"<"col-md-6"i><"col-md-6"p>>',
+        columnDefs: [
+            { orderable: false, targets: [1, 5] } // Nonaktifkan sorting di kolom Foto(1) dan Aksi(5)
+        ]
+    });
+
+    // Inisialisasi Tooltip
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);

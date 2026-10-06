@@ -1,0 +1,6 @@
+.git
+.env
+.env.*
+backups
+error_log
+*.dmp

@@ -125,8 +125,10 @@ if ($aksi == 'tambah') {
     }
 
     try {
+        // [SECURITY HARDENING] Hindari SQL Injection dengan cast ke int atau prepared statement
+        $id_ta_sumber_int = (int)$id_ta_sumber;
         // Ambil semua kelas dari tahun ajaran sumber
-        $query_sumber = mysqli_query($koneksi, "SELECT nama_kelas, fase, id_wali_kelas FROM kelas WHERE id_tahun_ajaran = '$id_ta_sumber'");
+        $query_sumber = mysqli_query($koneksi, "SELECT nama_kelas, fase, id_wali_kelas FROM kelas WHERE id_tahun_ajaran = $id_ta_sumber_int");
         
         // Siapkan variabel counter
         $berhasil = 0;

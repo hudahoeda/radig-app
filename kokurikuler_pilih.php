@@ -1,10 +1,17 @@
 <?php
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 include 'header.php';
 include 'koneksi.php';
 
 // Validasi peran
 if (!in_array($_SESSION['role'], ['guru', 'admin'])) {
-    echo "<script>Swal.fire('Akses Ditolak','Anda tidak memiliki wewenang.','error').then(() => window.location = 'dashboard.php');</script>";
+    echo "<script>
+        document.addEventListener('DOMContentLoaded', function() {
+            Swal.fire('Akses Ditolak','Anda tidak memiliki wewenang.','error').then(() => window.location = 'dashboard.php');
+        });
+    </script>";
+    echo "</main></div></div></body></html>";
     exit;
 }
 
@@ -17,21 +24,32 @@ $ta_aktif = mysqli_fetch_assoc($q_ta);
 $id_tahun_ajaran = $ta_aktif['id_tahun_ajaran'] ?? 0;
 
 // === 1. Ambil Kegiatan yang Relevan dengan Guru ===
-// Kita gunakan DISTINCT agar jika guru mengajar banyak kelas di 1 kegiatan, kegiatannya muncul sekali saja
-$query_kegiatan = "
-    SELECT DISTINCT k.id_kegiatan, k.tema_kegiatan, k.semester, k.id_koordinator
-    FROM kokurikuler_kegiatan k
-    LEFT JOIN kokurikuler_tim_penilai kt ON k.id_kegiatan = kt.id_kegiatan
-    WHERE k.id_tahun_ajaran = ? 
-    AND (
-        ? = 'admin' 
-        OR k.id_koordinator = ? 
-        OR kt.id_guru = ?
-    )
-    ORDER BY k.semester, k.tema_kegiatan
-";
-$stmt = mysqli_prepare($koneksi, $query_kegiatan);
-mysqli_stmt_bind_param($stmt, "issi", $id_tahun_ajaran, $role_login, $id_guru_login, $id_guru_login);
+if ($role_login == 'admin') {
+    $query_kegiatan = "
+        SELECT DISTINCT k.id_kegiatan, k.tema_kegiatan, k.semester, k.id_koordinator
+        FROM kokurikuler_kegiatan k
+        WHERE k.id_tahun_ajaran = ?
+        ORDER BY k.semester, k.tema_kegiatan
+    ";
+    $stmt = mysqli_prepare($koneksi, $query_kegiatan);
+    mysqli_stmt_bind_param($stmt, "i", $id_tahun_ajaran);
+} else {
+    // Kita gunakan DISTINCT agar jika guru mengajar banyak kelas di 1 kegiatan, kegiatannya muncul sekali saja
+    $query_kegiatan = "
+        SELECT DISTINCT k.id_kegiatan, k.tema_kegiatan, k.semester, k.id_koordinator
+        FROM kokurikuler_kegiatan k
+        LEFT JOIN kokurikuler_tim_penilai kt ON k.id_kegiatan = kt.id_kegiatan
+        WHERE k.id_tahun_ajaran = ?
+        AND (
+            k.id_koordinator = ?
+            OR kt.id_guru = ?
+        )
+        ORDER BY k.semester, k.tema_kegiatan
+    ";
+    $stmt = mysqli_prepare($koneksi, $query_kegiatan);
+    mysqli_stmt_bind_param($stmt, "iii", $id_tahun_ajaran, $id_guru_login, $id_guru_login);
+}
+
 mysqli_stmt_execute($stmt);
 $daftar_kegiatan = mysqli_fetch_all(mysqli_stmt_get_result($stmt), MYSQLI_ASSOC);
 

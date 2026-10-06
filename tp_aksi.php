@@ -21,15 +21,16 @@ if ($aksi == 'tambah') {
     $kode_tp = $_POST['kode_tp'];
     $deskripsi = $_POST['deskripsi_tp'];
     $semester = $_POST['semester'];
+    $kktp = isset($_POST['kktp']) ? (int)$_POST['kktp'] : 75;
     $id_tahun_ajaran = $_POST['id_tahun_ajaran'];
     $kelas_berlaku = isset($_POST['kelas_berlaku']) ? $_POST['kelas_berlaku'] : [];
     $fase = 'D';
 
     mysqli_begin_transaction($koneksi);
     try {
-        $query_tp = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $query_tp = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran, kktp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt_tp = mysqli_prepare($koneksi, $query_tp);
-        mysqli_stmt_bind_param($stmt_tp, "iisssii", $id_mapel, $id_guru_pembuat, $fase, $kode_tp, $deskripsi, $semester, $id_tahun_ajaran);
+        mysqli_stmt_bind_param($stmt_tp, "iisssiii", $id_mapel, $id_guru_pembuat, $fase, $kode_tp, $deskripsi, $semester, $id_tahun_ajaran, $kktp);
         mysqli_stmt_execute($stmt_tp);
 
         $id_tp_baru = mysqli_insert_id($koneksi);
@@ -69,14 +70,15 @@ elseif ($aksi == 'update') {
     $kode_tp = $_POST['kode_tp'];
     $deskripsi = $_POST['deskripsi_tp'];
     $semester = $_POST['semester'];
+    $kktp = isset($_POST['kktp']) ? (int)$_POST['kktp'] : 75;
     $kelas_berlaku = isset($_POST['kelas_berlaku']) ? $_POST['kelas_berlaku'] : [];
 
     mysqli_begin_transaction($koneksi);
     try {
         // Update data utama TP (pastikan guru hanya bisa update TP miliknya)
-        $query_update_tp = "UPDATE tujuan_pembelajaran SET id_mapel=?, kode_tp=?, deskripsi_tp=?, semester=? WHERE id_tp=? AND id_guru_pembuat=?";
+        $query_update_tp = "UPDATE tujuan_pembelajaran SET id_mapel=?, kode_tp=?, deskripsi_tp=?, semester=?, kktp=? WHERE id_tp=? AND id_guru_pembuat=?";
         $stmt_update_tp = mysqli_prepare($koneksi, $query_update_tp);
-        mysqli_stmt_bind_param($stmt_update_tp, "isssii", $id_mapel, $kode_tp, $deskripsi, $semester, $id_tp, $id_guru_login);
+        mysqli_stmt_bind_param($stmt_update_tp, "isssiii", $id_mapel, $kode_tp, $deskripsi, $semester, $kktp, $id_tp, $id_guru_login);
         mysqli_stmt_execute($stmt_update_tp);
 
         // Hapus penugasan kelas yang lama

@@ -8,12 +8,19 @@ if ($_SESSION['role'] != 'admin') {
 }
 
 // --- LANGKAH 1: DETEKSI OTOMATIS JENJANG SEKOLAH ---
-$query_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah WHERE id_sekolah = 1");
+$query_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah LIMIT 1");
 $sekolah = mysqli_fetch_assoc($query_sekolah);
 $jenjang_sekolah = $sekolah['jenjang'] ?? 'SMP'; 
 
 // [MODIFIKASI] Kita ingin halaman ini SELALU menampilkan Mapel
 $tampilkan_mode_mapel = true; 
+
+// Ambil semua mapel untuk modal gabung
+$q_semua_mapel = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel FROM mata_pelajaran ORDER BY nama_mapel ASC");
+$opsi_mapel = [];
+while ($m = mysqli_fetch_assoc($q_semua_mapel)) {
+    $opsi_mapel[] = $m;
+}
 ?>
 
 <style>
@@ -100,14 +107,22 @@ $tampilkan_mode_mapel = true;
 
     <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4" id="card-list">
         <?php 
+        // Ambil ID tahun ajaran aktif
+        $q_ta_aktif = mysqli_query($koneksi, "SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
+        $d_ta_aktif = mysqli_fetch_assoc($q_ta_aktif);
+        $id_ta_aktif = $d_ta_aktif ? (int)$d_ta_aktif['id_tahun_ajaran'] : 0;
+
         $query = mysqli_query($koneksi, "
             SELECT 
-                mp.id_mapel, mp.nama_mapel, mp.kode_mapel, mp.kelompok,
-                (SELECT COUNT(tp.id_tp) FROM tujuan_pembelajaran tp WHERE tp.id_mapel = mp.id_mapel) as jumlah_tp,
-                (SELECT COUNT(DISTINCT gm.id_guru) FROM guru_mengajar gm WHERE gm.id_mapel = mp.id_mapel) as jumlah_guru,
-                (SELECT GROUP_CONCAT(DISTINCT g.nama_guru SEPARATOR '</li><li>') FROM guru_mengajar gm JOIN guru g ON gm.id_guru = g.id_guru WHERE gm.id_mapel = mp.id_mapel LIMIT 3) as guru_pengampu,
-                (SELECT GROUP_CONCAT(DISTINCT k.nama_kelas ORDER BY k.nama_kelas ASC SEPARATOR ', ') FROM guru_mengajar gm JOIN kelas k ON gm.id_kelas = k.id_kelas WHERE gm.id_mapel = mp.id_mapel) as kelas_diajarkan
-            FROM mata_pelajaran mp ORDER BY mp.urutan ASC, mp.nama_mapel ASC
+                mp.id_mapel, mp.nama_mapel, mp.kode_mapel, mp.kelompok, mp.is_tambahan, mp.parent_mapel_id,
+                parent.nama_mapel as nama_induk,
+                (SELECT COUNT(tp.id_tp) FROM tujuan_pembelajaran tp WHERE tp.id_mapel = mp.id_mapel AND tp.id_tahun_ajaran = $id_ta_aktif) as jumlah_tp,
+                (SELECT COUNT(DISTINCT gm.id_guru) FROM guru_mengajar gm WHERE gm.id_mapel = mp.id_mapel AND gm.id_tahun_ajaran = $id_ta_aktif) as jumlah_guru,
+                (SELECT GROUP_CONCAT(DISTINCT g.nama_guru SEPARATOR '</li><li>') FROM guru_mengajar gm JOIN guru g ON gm.id_guru = g.id_guru WHERE gm.id_mapel = mp.id_mapel AND gm.id_tahun_ajaran = $id_ta_aktif) as guru_pengampu,
+                (SELECT GROUP_CONCAT(DISTINCT k.nama_kelas ORDER BY k.nama_kelas ASC SEPARATOR ', ') FROM guru_mengajar gm JOIN kelas k ON gm.id_kelas = k.id_kelas WHERE gm.id_mapel = mp.id_mapel AND gm.id_tahun_ajaran = $id_ta_aktif) as kelas_diajarkan
+            FROM mata_pelajaran mp
+            LEFT JOIN mata_pelajaran parent ON mp.parent_mapel_id = parent.id_mapel
+            ORDER BY mp.urutan ASC, mp.nama_mapel ASC
         ");
         
         $colors = ['#0d6efd', '#6f42c1', '#d63384', '#fd7e14', '#198754', '#0dcaf0', '#6610f2'];
@@ -155,6 +170,14 @@ $tampilkan_mode_mapel = true;
                         
                         <h4 class="searchable-name"><?php echo htmlspecialchars($data['nama_mapel']); ?></h4>
                         <p class="searchable-code badge bg-white bg-opacity-25 fw-normal">Kode: <?php echo htmlspecialchars($data['kode_mapel']); ?></p>
+
+                        <?php if ($data['is_tambahan'] == '1'): ?>
+                            <span class="badge bg-warning text-dark border ms-1" data-bs-toggle="tooltip" title="Akan dicetak di halaman Lampiran"><i class="bi bi-paperclip me-1"></i>Lampiran</span>
+                        <?php endif; ?>
+
+                        <?php if (!empty($data['nama_induk'])): ?>
+                            <span class="badge bg-info text-dark border ms-1" data-bs-toggle="tooltip" title="Nilai akan dilebur ke <?php echo htmlspecialchars($data['nama_induk']); ?>"><i class="bi bi-diagram-2 me-1"></i>Gabung: <?php echo htmlspecialchars($data['nama_induk']); ?></span>
+                        <?php endif; ?>
                     </div>
                     
                     <div class="card-body p-0">
@@ -198,10 +221,11 @@ $tampilkan_mode_mapel = true;
 
                         <!-- Info Guru -->
                         <div class="p-3">
-                            <small class="text-uppercase text-muted fw-bold" style="font-size: 0.7rem;">Guru Pengampu</small>
                             <ol class="guru-list mb-0 searchable-guru mt-1">
                                 <?php if (!empty($data['guru_pengampu'])) {
-                                    echo '<li>' . $data['guru_pengampu'] . '</li>'; 
+                                    $guru_arr = explode('</li><li>', $data['guru_pengampu']);
+                                    $guru_show = array_slice($guru_arr, 0, 3);
+                                    echo '<li>' . implode('</li><li>', $guru_show) . '</li>';
                                     if ($data['jumlah_guru'] > 3) { echo '<li class="text-muted small fst-italic">... dan ' . ($data['jumlah_guru'] - 3) . ' guru lainnya</li>'; }
                                 } else { echo '<li class="text-muted fst-italic" style="list-style: none;">Belum ditentukan</li>'; } ?>
                             </ol>
@@ -212,13 +236,33 @@ $tampilkan_mode_mapel = true;
                         <a href="tp_tampil.php?id_mapel=<?php echo $data['id_mapel']; ?>" class="btn btn-primary btn-sm d-block w-100 mb-2 fw-bold">
                             <i class="bi bi-card-list me-2"></i>Kelola Tujuan Pemb.
                         </a>
-                        <div class="d-flex justify-content-between gap-2">
-                            <a href="mapel_edit.php?id=<?php echo $data['id_mapel']; ?>" class="btn btn-outline-secondary btn-sm flex-fill">
-                                <i class="bi bi-pencil-fill me-1"></i> Edit
+                        <div class="d-flex justify-content-between gap-1 mt-2">
+                            <!-- Tombol Edit -->
+                            <a href="mapel_edit.php?id=<?php echo $data['id_mapel']; ?>" class="btn btn-outline-secondary btn-sm flex-fill" data-bs-toggle="tooltip" title="Edit Data">
+                                <i class="bi bi-pencil-fill"></i>
                             </a>
-                            <a href="mapel_aksi.php?aksi=hapus&id=<?php echo $data['id_mapel']; ?>" class="btn btn-outline-danger btn-sm flex-fill btn-hapus">
-                                <i class="bi bi-trash-fill me-1"></i> Hapus
+                            <!-- Tombol Hapus -->
+                            <a href="mapel_aksi.php?aksi=hapus&id=<?php echo $data['id_mapel']; ?>" class="btn btn-outline-danger btn-sm flex-fill btn-hapus" data-bs-toggle="tooltip" title="Hapus Data">
+                                <i class="bi bi-trash-fill"></i>
                             </a>
+                            <!-- Dropdown Opsi Cepat -->
+                            <div class="dropdown flex-fill">
+                                <button class="btn btn-outline-info btn-sm w-100 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Opsi Cepat">
+                                    <i class="bi bi-gear-fill"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow">
+                                    <li>
+                                        <a class="dropdown-item" href="#" onclick="toggleLampiran(<?php echo $data['id_mapel']; ?>, <?php echo $data['is_tambahan'] == '1' ? '0' : '1'; ?>)">
+                                            <i class="bi bi-paperclip me-2 text-warning"></i> <?php echo $data['is_tambahan'] == '1' ? 'Hapus dari Lampiran' : 'Jadikan Lampiran'; ?>
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="#" onclick="showModalGabung(<?php echo $data['id_mapel']; ?>, <?php echo $data['parent_mapel_id'] ? $data['parent_mapel_id'] : '0'; ?>)">
+                                            <i class="bi bi-diagram-2 me-2 text-info"></i> Gabung ke Mapel Induk
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
                     </div>
 
@@ -314,6 +358,59 @@ function toggleStatusAgama(id, nama, isAgama) {
         if (result.isConfirmed) {
             // Redirect ke mapel_aksi untuk update
             window.location.href = `mapel_aksi.php?aksi=set_kelompok&id=${id}&kelompok=${newKelompok}`;
+        }
+    });
+}
+
+// [BARU] Data Semua Mapel untuk Dropdown Modal
+const semuaMapel = <?php echo json_encode($opsi_mapel); ?>;
+
+function showModalGabung(idMapel, currentParent) {
+    let optionsHtml = '<option value="">-- Tidak Gabung / Berdiri Sendiri --</option>';
+    semuaMapel.forEach(m => {
+        if (m.id_mapel != idMapel) {
+            let selected = (m.id_mapel == currentParent) ? 'selected' : '';
+            optionsHtml += `<option value="${m.id_mapel}" ${selected}>${m.nama_mapel}</option>`;
+        }
+    });
+
+    Swal.fire({
+        title: 'Gabung ke Mapel Induk',
+        html: `Pilih Mata Pelajaran Induk: <br><br>
+               <select id="swal-input-parent" class="form-select text-center mx-auto" style="max-width: 90%;">
+                   ${optionsHtml}
+               </select><br>
+               <small class="text-muted">Nilai mapel ini akan digabungkan ke mapel induk saat dicetak.</small>`,
+        showCancelButton: true,
+        confirmButtonColor: '#0dcaf0',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="bi bi-save me-1"></i> Simpan',
+        cancelButtonText: 'Batal',
+        preConfirm: () => {
+            return document.getElementById('swal-input-parent').value;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            let idInduk = result.value;
+            window.location.href = `mapel_aksi.php?aksi=set_parent&id=${idMapel}&parent=${idInduk}`;
+        }
+    });
+}
+
+function toggleLampiran(idMapel, isTambahan) {
+    let status = isTambahan ? 'Menjadikan Lampiran' : 'Menghapus dari Lampiran';
+    Swal.fire({
+        title: 'Konfirmasi',
+        text: `Apakah Anda yakin ingin ${status}?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#ffc107',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Ya, Lanjutkan',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = `mapel_aksi.php?aksi=set_lampiran&id=${idMapel}&status=${isTambahan}`;
         }
     });
 }

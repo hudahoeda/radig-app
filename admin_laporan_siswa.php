@@ -57,17 +57,17 @@ if ($id_kelas > 0) {
 
     // Ambil daftar siswa
     $query_siswa = "
-        SELECT 
+        SELECT DISTINCT
             s.id_siswa, s.nisn, s.nama_lengkap, s.foto_siswa,
             r.status AS status_rapor 
         FROM siswa s
         LEFT JOIN rapor r ON s.id_siswa = r.id_siswa 
             AND r.id_tahun_ajaran = ? AND r.semester = ?
-        WHERE s.id_kelas = ? AND s.status_siswa = 'Aktif' 
+        WHERE (s.id_kelas = ? OR r.id_kelas = ?)
         ORDER BY s.nama_lengkap ASC
     ";
     $stmt_siswa = mysqli_prepare($koneksi, $query_siswa);
-    mysqli_stmt_bind_param($stmt_siswa, "iii", $id_tahun_ajaran_aktif, $semester_aktif, $id_kelas);
+    mysqli_stmt_bind_param($stmt_siswa, "iiii", $id_tahun_ajaran_aktif, $semester_aktif, $id_kelas, $id_kelas);
     mysqli_stmt_execute($stmt_siswa);
     $result_siswa = mysqli_stmt_get_result($stmt_siswa);
     
@@ -252,6 +252,10 @@ $persentase_kelas = ($total_siswa > 0) ? round(($rapor_final_count / $total_sisw
                                 <input type="checkbox" class="form-check-input" onclick="toggleAll(this, 'identitas')">
                             </th>
                             <th class="text-center">
+                                Rapor PTS<br>
+                                <input type="checkbox" class="form-check-input" onclick="toggleAll(this, 'rapor_pts')">
+                            </th>
+                            <th class="text-center">
                                 Rapor<br>
                                 <input type="checkbox" class="form-check-input" onclick="toggleAll(this, 'rapor')">
                             </th>
@@ -294,13 +298,17 @@ $persentase_kelas = ($total_siswa > 0) ? round(($rapor_final_count / $total_sisw
                                     <input type="checkbox" class="form-check-input check-identitas" name="check_identitas[]" value="<?php echo $siswa['id_siswa']; ?>">
                                 </td>
                                 <td class="text-center">
+                                    <input type="checkbox" class="form-check-input check-rapor_pts" name="check_rapor_pts[]" value="<?php echo $siswa['id_siswa']; ?>">
+                                </td>
+                                <td class="text-center">
                                     <input type="checkbox" class="form-check-input check-rapor" name="check_rapor[]" value="<?php echo $siswa['id_siswa']; ?>" <?php echo ($status_rapor != 'Final') ? 'disabled' : ''; ?>>
                                 </td>
                                 <td class="text-center pe-4">
                                     <div class="btn-group shadow-sm">
                                         <a href="rapor_cover.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" data-bs-toggle="tooltip" title="Cetak Sampul"><i class="bi bi-book"></i></a>
                                         <a href="rapor_identitas_siswa.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" data-bs-toggle="tooltip" title="Cetak Identitas"><i class="bi bi-person-badge"></i></a>
-                                        <a href="rapor_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>" class="btn btn-sm btn-outline-primary <?php echo ($status_rapor != 'Final') ? 'disabled' : ''; ?>" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor"><i class="bi bi-file-pdf-fill"></i></a>
+                                        <a href="rapor_pts_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>&semester=<?php echo $semester_aktif; ?>&ta=<?php echo $id_tahun_ajaran_aktif; ?>" class="btn btn-sm btn-outline-info" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor PTS"><i class="bi bi-calendar-event"></i></a>
+                                        <a href="rapor_pdf.php?id_siswa=<?php echo $siswa['id_siswa']; ?>&semester=<?php echo $semester_aktif; ?>&ta=<?php echo $id_tahun_ajaran_aktif; ?>" class="btn btn-sm btn-outline-primary <?php echo ($status_rapor != 'Final') ? 'disabled' : ''; ?>" target="_blank" data-bs-toggle="tooltip" title="Cetak Rapor"><i class="bi bi-file-pdf-fill"></i></a>
                                     </div>
                                 </td>
                             </tr>
@@ -326,6 +334,9 @@ $persentase_kelas = ($total_siswa > 0) ? round(($rapor_final_count / $total_sisw
                 </button>
                 <button type="button" class="btn btn-outline-secondary px-4 fw-bold" onclick="prosesCetakMassal('identitas')">
                     <i class="bi bi-person-badge me-2"></i>Cetak Identitas Terpilih
+                </button>
+                <button type="button" class="btn btn-outline-info px-4 fw-bold" onclick="prosesCetakMassal('rapor_pts')">
+                    <i class="bi bi-calendar-event me-2"></i>Cetak PTS Terpilih
                 </button>
                 <button type="button" class="btn btn-primary px-5 fw-bold" onclick="prosesCetakMassal('rapor')">
                     <i class="bi bi-printer-fill me-2"></i>Cetak Rapor Terpilih
@@ -372,7 +383,10 @@ function prosesCetakMassal(tipeCetak) {
     }
     
     let ids = listSiswaId.join(',');
-    let url = `rapor_cetak_massal.php?tipe=${tipeCetak}&ids=${ids}`;
+    let semester = '<?php echo $semester_aktif; ?>';
+    let ta = '<?php echo $id_tahun_ajaran_aktif; ?>';
+    let targetFile = (tipeCetak === 'rapor_pts') ? 'rapor_cetak_massal_pts.php' : 'rapor_cetak_massal.php';
+    let url = `${targetFile}?tipe=${tipeCetak}&ids=${ids}&semester=${semester}&ta=${ta}`;
     window.open(url, '_blank');
 }
 </script>

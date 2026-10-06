@@ -9,40 +9,17 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
     exit;
 }
 
-// --- [PAGINASI & SEARCH LOGIC] ---
-$limit = 12; // Jumlah item per halaman (kartu)
-
-// Ambil parameter Guru
-$search_guru = isset($_GET['search_guru']) ? mysqli_real_escape_string($koneksi, $_GET['search_guru']) : '';
-$page_guru = isset($_GET['page_guru']) ? (int)$_GET['page_guru'] : 1;
-$offset_guru = ($page_guru - 1) * $limit;
-
-// Ambil parameter Siswa
-$search_siswa = isset($_GET['search_siswa']) ? mysqli_real_escape_string($koneksi, $_GET['search_siswa']) : '';
-$page_siswa = isset($_GET['page_siswa']) ? (int)$_GET['page_siswa'] : 1;
-$offset_siswa = ($page_siswa - 1) * $limit;
-
 // --- [LOGIKA TAB BARU - UPDATED] ---
 // Tentukan sub-tab aktif
 $active_tab = $_GET['tab'] ?? 'guru'; // Default ke sub-tab 'guru'
 
 // Tentukan main-tab aktif berdasarkan sub-tab
-// Hapus 'import_mengajar' dari array pengecekan
 $active_main_tab = 'pengguna'; // Default
 if (in_array($active_tab, ['import_guru', 'import_siswa'])) {
     $active_main_tab = 'import';
 }
-
-// Logika untuk memastikan tab & paginasi/search sinkron
-if (isset($_GET['search_guru']) || isset($_GET['page_guru'])) {
-    $active_main_tab = 'pengguna';
-    $active_tab = 'guru';
-}
-if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
-    $active_main_tab = 'pengguna';
-    $active_tab = 'siswa';
-}
 // --- [AKHIR LOGIKA TAB BARU] ---
+
 ?>
 
 <style>
@@ -51,40 +28,77 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
     .page-header h1 { font-weight: 700; }
     .page-header .btn { box-shadow: 0 4px 15px rgba(0,0,0,0.2); font-weight: 600; }
 
-    .user-card-container {
-        padding: 1.5rem 0;
-        padding-bottom: 100px; /* Ruang untuk action bar */
+    /* Sticky Header CSS Override untuk DataTables */
+    .table-container {
+        max-height: 65vh;
+        overflow-y: auto;
     }
-    .user-card {
-        transition: all 0.2s ease-in-out;
-        border: 1px solid var(--bs-border-color-translucent);
-        border-left-width: 4px;
-        position: relative; /* Untuk checkbox */
+    .table-container::-webkit-scrollbar { width: 6px; }
+    .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
+    .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+    .table thead th,
+    table.dataTable thead th,
+    table.dataTable thead th.sorting,
+    table.dataTable thead th.sorting_asc,
+    table.dataTable thead th.sorting_desc {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 10 !important;
+        background-color: #f8fafc !important;
+        color: #64748b;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        padding: 1rem;
+        box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+        border-bottom: none !important;
     }
-    .user-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    .table tbody td { padding: 1rem; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
+    .table tbody tr:hover { background-color: #f8fafc; }
+
+    /* Styling Dropdown Aksi 3 Titik */
+    .btn-action-dots {
+        width: 32px; height: 32px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 50%; transition: all 0.2s; background: #f8fafc; border: 1px solid #e2e8f0; color: #475569;
     }
-    .user-card.selected {
-        border-color: var(--primary-color);
-        background-color: #f0f9ff;
+    .btn-action-dots:hover, .btn-action-dots:focus {
+        background: #e2e8f0; transform: translateY(-2px); box-shadow: 0 3px 6px rgba(0,0,0,0.05); color: #0f172a;
     }
-    .user-card .form-check-input {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 1.5em;
-        height: 1.5em;
-        cursor: pointer;
+    .dropdown-action-menu {
+        border: none;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        padding: 0.5rem;
     }
-    .user-card-img {
-        width: 70px;
-        height: 70px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid white;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    .dropdown-action-menu .dropdown-item {
+        border-radius: 8px;
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: all 0.2s;
     }
+    .dropdown-action-menu .dropdown-item:hover {
+        background-color: #f1f5f9;
+        transform: translateX(3px);
+    }
+    .dropdown-action-menu .dropdown-item.text-danger:hover {
+        background-color: #fef2f2;
+    }
+
+    /* DataTables Customization */
+    div.dataTables_wrapper div.dataTables_filter input {
+        border-radius: 20px;
+        border: 1px solid #cbd5e1;
+        padding: 0.4rem 1rem;
+    }
+    div.dataTables_wrapper div.dataTables_length select {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+    }
+
+    /* Other utilities */
     .status-dot {
         height: 10px;
         width: 10px;
@@ -94,7 +108,13 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
     }
     .status-online { background-color: var(--bs-success); }
     .status-offline { background-color: var(--bs-secondary); }
-    .search-bar { max-width: 400px; }
+
+    .table-students img {
+        width: 45px; height: 45px;
+        object-fit: cover; border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
     
     /* Import Styles */
     .import-step {
@@ -159,6 +179,9 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
     .card-body.card-body-tabbed { padding: 0 1.5rem 1.5rem 1.5rem; }
 </style>
 
+<!-- Tambahan DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
 <div class="container-fluid">
     <div class="page-header text-white mb-4 shadow">
         <div class="d-sm-flex justify-content-between align-items-center">
@@ -206,18 +229,10 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
                     <div class="tab-content" id="penggunaSubTabContent">
                         
                         <!-- [SUB-PANE: GURU & ADMIN] -->
-                        <div class="tab-pane fade <?php if($active_tab == 'guru') echo 'show active'; ?> user-card-container" id="guru-admin-pane" role="tabpanel">
+                        <div class="tab-pane fade <?php if($active_tab == 'guru') echo 'show active'; ?>" id="guru-admin-pane" role="tabpanel">
                             
-                            <!-- Toolbar: Search & Download -->
-                            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                                <!-- Search Bar Guru -->
-                                <form method="GET" action="pengguna_tampil.php" class="flex-grow-1" style="max-width: 400px;">
-                                    <input type="hidden" name="tab" value="guru">
-                                    <div class="input-group search-bar w-100">
-                                        <input type="text" id="searchGuru" name="search_guru" class="form-control" placeholder="Cari nama atau NIP guru/admin..." value="<?php echo htmlspecialchars($search_guru); ?>">
-                                        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
-                                    </div>
-                                </form>
+                            <!-- Toolbar: Download -->
+                            <div class="d-flex justify-content-end mb-4 gap-2">
                                 <!-- Tombol Download Data Guru -->
                                 <a href="pengguna_aksi.php?aksi=export_guru" target="_blank" class="btn btn-success text-white shadow-sm">
                                     <i class="bi bi-file-earmark-excel-fill me-2"></i>Download Data Guru
@@ -226,117 +241,96 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
 
                             <!-- Form Bulk Delete Guru -->
                             <form id="form-bulk-delete-guru" action="pengguna_aksi.php?aksi=hapus_banyak" method="POST">
-                                <div id="guru-list" class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
-                                    <?php
-                                    // Query Guru
-                                    $where_guru = ''; $params_guru = []; $types_guru = '';
-                                    if (!empty($search_guru)) {
-                                        $where_guru = " WHERE (nama_guru LIKE ? OR nip LIKE ?)";
-                                        $search_guru_param = "%" . $search_guru . "%";
-                                        $params_guru[] = $search_guru_param; $params_guru[] = $search_guru_param;
-                                        $types_guru = 'ss';
-                                    }
-                                    $query_count_guru = "SELECT COUNT(id_guru) as total FROM guru" . $where_guru;
-                                    $stmt_count_guru = mysqli_prepare($koneksi, $query_count_guru);
-                                    if ($types_guru) { mysqli_stmt_bind_param($stmt_count_guru, $types_guru, ...$params_guru); }
-                                    mysqli_stmt_execute($stmt_count_guru);
-                                    $total_guru = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt_count_guru))['total'];
-                                    $total_pages_guru = ceil($total_guru / $limit);
-                                    $query_guru = "SELECT id_guru, nama_guru, nip, username, role, foto_guru, terakhir_login FROM guru" . $where_guru . " ORDER BY nama_guru ASC LIMIT ? OFFSET ?";
-                                    $params_guru[] = $limit; $params_guru[] = $offset_guru; $types_guru .= 'ii';
-                                    $stmt_guru = mysqli_prepare($koneksi, $query_guru);
-                                    mysqli_stmt_bind_param($stmt_guru, $types_guru, ...$params_guru);
-                                    mysqli_stmt_execute($stmt_guru);
-                                    $result_guru = mysqli_stmt_get_result($stmt_guru);
-                                    
-                                    if ($total_guru > 0) {
-                                        while ($data = mysqli_fetch_assoc($result_guru)) {
+                                <div class="table-container">
+                                    <table id="tabelGuru" class="table table-students align-middle mb-0 w-100">
+                                        <thead>
+                                            <tr>
+                                                <th class="text-center" style="width: 40px;"><input type="checkbox" class="form-check-input" id="checkAllGuru" title="Pilih Semua"></th>
+                                                <th class="text-center" style="width: 60px;">No</th>
+                                                <th class="text-center" style="width: 70px;">Foto</th>
+                                                <th>Nama / NIP</th>
+                                                <th>Username & Role</th>
+                                                <th>Status Aktivitas</th>
+                                                <th class="text-center" style="width: 80px;">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php
+                                        // Query Guru (Tanpa Limit agar DataTables yang meng-handle)
+                                        $query_guru = mysqli_query($koneksi, "SELECT id_guru, nama_guru, nip, username, role, foto_guru, terakhir_login FROM guru ORDER BY nama_guru ASC");
+                                        $no = 1;
+                                        while ($data = mysqli_fetch_assoc($query_guru)) {
                                             $foto_guru = $data['foto_guru'] ?? null;
                                             $foto_path = 'uploads/guru_photos/' . $foto_guru;
                                             $foto_default = 'uploads/guruc.png'; 
                                             $gambar_tampil = (!empty($foto_guru) && file_exists($foto_path)) ? $foto_path : $foto_default;
                                             $is_self = ($_SESSION['id_guru'] == $data['id_guru']);
-                                    ?>
-                                    <div class="col user-card-col">
-                                        <div class="card h-100 user-card">
-                                            <div class="card-body">
-                                                <?php if (!$is_self): ?>
-                                                <input class="form-check-input bulk-checkbox-guru" type="checkbox" name="user_ids[]" value="<?php echo $data['id_guru']; ?>" title="Pilih pengguna ini">
-                                                <?php endif; ?>
-                                                <div class="d-flex align-items-center">
-                                                    <img src="<?php echo htmlspecialchars($gambar_tampil); ?>" class="user-card-img" alt="Foto <?php echo htmlspecialchars($data['nama_guru']); ?>">
-                                                    <div class="ms-3 text-start">
-                                                        <h5 class="card-title mb-0"><?php echo htmlspecialchars($data['nama_guru']); ?></h5>
-                                                        <p class="card-text text-muted mb-1">NIP. <?php echo htmlspecialchars($data['nip'] ?? '-'); ?></p>
-                                                    </div>
-                                                </div>
-                                                <hr>
-                                                <div class="text-start small">
-                                                    <p class="mb-1"><strong><i class="bi bi-person-vcard me-2"></i>Role:</strong> <?php if($data['role'] == 'admin'): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-secondary">Guru</span><?php endif; ?></p>
-                                                    <p class="mb-1"><strong><i class="bi bi-person me-2"></i>Username:</strong> <?php echo htmlspecialchars($data['username']); ?></p>
-                                                    <p class="mb-2"><strong><i class="bi bi-clock-history me-2"></i>Aktivitas:</strong> 
-                                                    <?php
-                                                        if ($data['terakhir_login']) {
-                                                            $last_login = new DateTime($data['terakhir_login']); $now = new DateTime();
-                                                            $interval = $now->getTimestamp() - $last_login->getTimestamp();
-                                                            $is_online = $interval < 300; // 5 menit
-                                                            echo '<span class="status-dot ' . ($is_online ? 'status-online' : 'status-offline') . '"></span>';
-                                                            echo 'Login ' . $last_login->format('d/m/Y, H:i');
-                                                        } else { echo '<span class="status-dot status-offline"></span> Belum pernah login'; }
-                                                    ?>
-                                                    </p>
-                                                </div>
-                                                <div class="mt-3 border-top pt-3">
-                                                    <a href="pengguna_edit.php?id=<?php echo $data['id_guru']; ?>" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Edit Pengguna"><i class="bi bi-pencil-fill me-1"></i> Edit</a>
-                                                    <?php if (!$is_self) : ?>
-                                                    <a href="admin_aksi.php?aksi=login_sebagai_guru&id_target=<?php echo $data['id_guru']; ?>" class="btn btn-outline-warning btn-sm" data-bs-toggle="tooltip" title="Login sebagai <?php echo htmlspecialchars($data['nama_guru']); ?>"><i class="bi bi-person-fill-gear"></i></a>
-                                                    <a href="#" onclick="hapusGuru(<?php echo $data['id_guru']; ?>)" class="btn btn-outline-danger btn-sm" data-bs-toggle="tooltip" title="Hapus Pengguna"><i class="bi bi-trash-fill me-1"></i> Hapus</a>
+
+                                            // Cek Status
+                                            if ($data['terakhir_login']) {
+                                                $last_login = new DateTime($data['terakhir_login']); $now = new DateTime();
+                                                $interval = $now->getTimestamp() - $last_login->getTimestamp();
+                                                $is_online = $interval < 300; // 5 menit
+                                                $status_text = 'Login ' . $last_login->format('d/m/Y, H:i');
+                                            } else {
+                                                $is_online = false;
+                                                $status_text = 'Belum pernah login';
+                                            }
+                                        ?>
+                                            <tr>
+                                                <td class="text-center">
+                                                    <?php if (!$is_self): ?>
+                                                    <input class="form-check-input bulk-checkbox-guru" type="checkbox" name="user_ids[]" value="<?php echo $data['id_guru']; ?>">
                                                     <?php endif; ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <?php } } else { ?>
-                                    <div class="col-12">
-                                        <div id="no-results-guru" class="text-center py-5">
-                                            <i class="bi bi-search fs-1 text-muted"></i> <h4 class="mt-3">Guru / Admin tidak ditemukan</h4>
-                                            <p class="text-muted">Tidak ada pengguna yang cocok dengan kata kunci pencarian Anda.</p>
-                                        </div>
-                                    </div>
-                                    <?php } ?>
+                                                </td>
+                                                <td class="text-center fw-bold text-muted"><?php echo $no++; ?></td>
+                                                <td class="text-center">
+                                                    <img src="<?php echo htmlspecialchars($gambar_tampil); ?>" alt="Foto" data-bs-toggle="tooltip" title="<?php echo htmlspecialchars($data['nama_guru']); ?>">
+                                                </td>
+                                                <td>
+                                                    <div class="fw-bold text-dark"><?php echo htmlspecialchars($data['nama_guru']); ?></div>
+                                                    <div class="text-muted small">NIP. <?php echo htmlspecialchars($data['nip'] ?? '-'); ?></div>
+                                                </td>
+                                                <td>
+                                                    <div class="fw-bold text-dark"><i class="bi bi-person me-1"></i><?php echo htmlspecialchars($data['username']); ?></div>
+                                                    <div class="mt-1">
+                                                        <?php if($data['role'] == 'admin'): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-secondary">Guru</span><?php endif; ?>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div class="small">
+                                                        <span class="status-dot <?php echo $is_online ? 'status-online' : 'status-offline'; ?>"></span>
+                                                        <span class="text-muted"><?php echo $status_text; ?></span>
+                                                    </div>
+                                                </td>
+                                                <td class="text-center">
+                                                    <div class="dropdown">
+                                                        <button class="btn-action-dots" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-bs-offset="0,5">
+                                                            <i class="bi bi-three-dots-vertical"></i>
+                                                        </button>
+                                                        <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
+                                                            <li><a class="dropdown-item text-warning" href="pengguna_edit.php?id=<?php echo $data['id_guru']; ?>"><i class="bi bi-pencil-square me-2"></i> Edit Data</a></li>
+                                                            <?php if (!$is_self) : ?>
+                                                            <li><hr class="dropdown-divider my-1"></li>
+                                                            <li><a class="dropdown-item text-primary" href="admin_aksi.php?aksi=login_sebagai_guru&id_target=<?php echo $data['id_guru']; ?>"><i class="bi bi-person-fill-gear me-2"></i> Login Sebagai</a></li>
+                                                            <li><a class="dropdown-item text-danger" href="#" onclick="hapusGuru(<?php echo $data['id_guru']; ?>); return false;"><i class="bi bi-trash me-2"></i> Hapus</a></li>
+                                                            <?php endif; ?>
+                                                        </ul>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php } ?>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </form>
-                            
-                            <!-- Paginasi Guru -->
-                            <?php if ($total_pages_guru > 1): ?>
-                            <nav aria-label="Paginasi Guru" class="mt-4 d-flex justify-content-center">
-                                <ul class="pagination">
-                                    <li class="page-item <?php if($page_guru <= 1) echo 'disabled'; ?>"><a class="page-link" href="?tab=guru&search_guru=<?php echo urlencode($search_guru); ?>&page_guru=<?php echo $page_guru - 1; ?>">Prev</a></li>
-                                    <?php 
-                                    $start_page = max(1, $page_guru - 2); $end_page = min($total_pages_guru, $page_guru + 2);
-                                    if ($start_page > 1) { echo '<li class="page-item"><a class="page-link" href="?tab=guru&search_guru='.urlencode($search_guru).'&page_guru=1">1</a></li>'; if ($start_page > 2) { echo '<li class="page-item disabled"><span class="page-link">...</span></li>'; } }
-                                    for ($i = $start_page; $i <= $end_page; $i++): ?><li class="page-item <?php if($page_guru == $i) echo 'active'; ?>"><a class="page-link" href="?tab=guru&search_guru=<?php echo urlencode($search_guru); ?>&page_guru=<?php echo $i; ?>"><?php echo $i; ?></a></li><?php endfor; 
-                                    if ($end_page < $total_pages_guru) { if ($end_page < $total_pages_guru - 1) { echo '<li class="page-item disabled"><span class="page-link">...</span></li>'; } echo '<li class="page-item"><a class="page-link" href="?tab=guru&search_guru='.urlencode($search_guru).'&page_guru='.$total_pages_guru.'">'.$total_pages_guru.'</a></li>'; }
-                                    ?>
-                                    <li class="page-item <?php if($page_guru >= $total_pages_guru) echo 'disabled'; ?>"><a class="page-link" href="?tab=guru&search_guru=<?php echo urlencode($search_guru); ?>&page_guru=<?php echo $page_guru + 1; ?>">Next</a></li>
-                                </ul>
-                            </nav>
-                            <?php endif; ?>
                         </div>
                         
                         <!-- [SUB-PANE: SISWA] -->
-                        <div class="tab-pane fade <?php if($active_tab == 'siswa') echo 'show active'; ?> user-card-container" id="siswa-pane" role="tabpanel">
+                        <div class="tab-pane fade <?php if($active_tab == 'siswa') echo 'show active'; ?>" id="siswa-pane" role="tabpanel">
                             
-                            <!-- Toolbar: Search & Download Siswa -->
-                            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                                <!-- Search Bar Siswa -->
-                                <form method="GET" action="pengguna_tampil.php" class="flex-grow-1" style="max-width: 400px;">
-                                    <input type="hidden" name="tab" value="siswa">
-                                    <div class="input-group search-bar w-100">
-                                        <input type="text" id="searchSiswa" name="search_siswa" class="form-control" placeholder="Cari nama atau NISN siswa..." value="<?php echo htmlspecialchars($search_siswa); ?>">
-                                        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
-                                    </div>
-                                </form>
+                            <!-- Toolbar: Download Siswa -->
+                            <div class="d-flex justify-content-end mb-4 gap-2">
                                 <!-- Tombol Download Data Siswa -->
                                 <a href="pengguna_aksi.php?aksi=export_siswa" target="_blank" class="btn btn-success text-white shadow-sm">
                                     <i class="bi bi-file-earmark-excel-fill me-2"></i>Download Data Siswa
@@ -345,87 +339,71 @@ if (isset($_GET['search_siswa']) || isset($_GET['page_siswa'])) {
 
                             <!-- Form Bulk Delete Siswa -->
                             <form id="form-bulk-delete-siswa" action="siswa_aksi.php?aksi=hapus_banyak" method="POST">
-                                <div id="siswa-list" class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
-                                    <?php
-                                    // Query Siswa
-                                    $where_siswa = ''; $params_siswa = []; $types_siswa = '';
-                                    if (!empty($search_siswa)) {
-                                        $where_siswa = " WHERE (s.nama_lengkap LIKE ? OR s.nisn LIKE ?)";
-                                        $search_siswa_param = "%" . $search_siswa . "%";
-                                        $params_siswa[] = $search_siswa_param; $params_siswa[] = $search_siswa_param;
-                                        $types_siswa = 'ss';
-                                    }
-                                    $query_count_siswa = "SELECT COUNT(s.id_siswa) as total FROM siswa s" . $where_siswa;
-                                    $stmt_count_siswa = mysqli_prepare($koneksi, $query_count_siswa);
-                                    if ($types_siswa) { mysqli_stmt_bind_param($stmt_count_siswa, $types_siswa, ...$params_siswa); }
-                                    mysqli_stmt_execute($stmt_count_siswa);
-                                    $total_siswa = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt_count_siswa))['total'];
-                                    $total_pages_siswa = ceil($total_siswa / $limit);
-                                    $query_siswa = "SELECT s.id_siswa, s.nama_lengkap, s.nisn, s.nis, s.username, s.foto_siswa, s.status_siswa, (SELECT k.nama_kelas FROM kelas k WHERE k.id_kelas = s.id_kelas) as nama_kelas FROM siswa s " . $where_siswa . " ORDER BY s.nama_lengkap ASC LIMIT ? OFFSET ?";
-                                    $params_siswa[] = $limit; $params_siswa[] = $offset_siswa; $types_siswa .= 'ii';
-                                    $stmt_siswa = mysqli_prepare($koneksi, $query_siswa);
-                                    mysqli_stmt_bind_param($stmt_siswa, $types_siswa, ...$params_siswa);
-                                    mysqli_stmt_execute($stmt_siswa);
-                                    $result_siswa = mysqli_stmt_get_result($stmt_siswa);
-                                    
-                                    if ($total_siswa > 0) {
-                                        while ($data = mysqli_fetch_assoc($result_siswa)) {
+                                <div class="table-container">
+                                    <table id="tabelSiswa" class="table table-students align-middle mb-0 w-100">
+                                        <thead>
+                                            <tr>
+                                                <th class="text-center" style="width: 40px;"><input type="checkbox" class="form-check-input" id="checkAllSiswa" title="Pilih Semua"></th>
+                                                <th class="text-center" style="width: 60px;">No</th>
+                                                <th class="text-center" style="width: 70px;">Foto</th>
+                                                <th>Nama / NISN</th>
+                                                <th>Kelas</th>
+                                                <th>Status & Username</th>
+                                                <th class="text-center" style="width: 80px;">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php
+                                        // Query Siswa (Tanpa Limit agar DataTables yang meng-handle)
+                                        $query_siswa = mysqli_query($koneksi, "SELECT s.id_siswa, s.nama_lengkap, s.nisn, s.nis, s.username, s.foto_siswa, s.status_siswa, (SELECT k.nama_kelas FROM kelas k WHERE k.id_kelas = s.id_kelas) as nama_kelas FROM siswa s ORDER BY s.nama_lengkap ASC");
+                                        $no = 1;
+                                        while ($data = mysqli_fetch_assoc($query_siswa)) {
                                             $foto_siswa = $data['foto_siswa'] ?? null;
                                             $foto_path = 'uploads/foto_siswa/' . $foto_siswa;
                                             $foto_default = 'uploads/siswac.png'; 
                                             $gambar_tampil = (!empty($foto_siswa) && file_exists($foto_path)) ? $foto_path : $foto_default;
-                                    ?>
-                                    <div class="col user-card-col">
-                                        <div class="card h-100 user-card">
-                                            <div class="card-body">
-                                                <input class="form-check-input bulk-checkbox-siswa" type="checkbox" name="siswa_ids[]" value="<?php echo $data['id_siswa']; ?>" title="Pilih siswa ini">
-                                                <div class="d-flex align-items-center">
-                                                    <img src="<?php echo htmlspecialchars($gambar_tampil); ?>" class="user-card-img" alt="Foto <?php echo htmlspecialchars($data['nama_lengkap']); ?>">
-                                                    <div class="ms-3 text-start">
-                                                        <h5 class="card-title mb-0"><?php echo htmlspecialchars($data['nama_lengkap']); ?></h5>
-                                                        <p class="card-text text-muted mb-1">NISN. <?php echo htmlspecialchars($data['nisn'] ?? '-'); ?></p>
+                                        ?>
+                                            <tr>
+                                                <td class="text-center">
+                                                    <input class="form-check-input bulk-checkbox-siswa" type="checkbox" name="siswa_ids[]" value="<?php echo $data['id_siswa']; ?>">
+                                                </td>
+                                                <td class="text-center fw-bold text-muted"><?php echo $no++; ?></td>
+                                                <td class="text-center">
+                                                    <img src="<?php echo htmlspecialchars($gambar_tampil); ?>" alt="Foto" data-bs-toggle="tooltip" title="<?php echo htmlspecialchars($data['nama_lengkap']); ?>">
+                                                </td>
+                                                <td>
+                                                    <div class="fw-bold text-dark"><?php echo htmlspecialchars($data['nama_lengkap']); ?></div>
+                                                    <div class="text-muted small">NISN. <?php echo htmlspecialchars($data['nisn'] ?? '-'); ?></div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge text-bg-info"><?php echo htmlspecialchars($data['nama_kelas'] ?? 'Belum ada kelas'); ?></span>
+                                                </td>
+                                                <td>
+                                                    <div class="fw-bold text-dark"><i class="bi bi-person me-1"></i><?php echo htmlspecialchars($data['username']); ?></div>
+                                                    <div class="mt-1">
+                                                        <?php $status_badge = ($data['status_siswa'] != 'Aktif') ? 'text-bg-secondary' : 'text-bg-success'; ?>
+                                                        <span class="badge <?php echo $status_badge; ?>"><?php echo htmlspecialchars($data['status_siswa']); ?></span>
                                                     </div>
-                                                </div>
-                                                <hr>
-                                                <div class="text-start small">
-                                                    <p class="mb-1"><strong><i class="bi bi-person-badge me-2"></i>Kelas:</strong> <span class="badge text-bg-info"><?php echo htmlspecialchars($data['nama_kelas'] ?? 'Belum ada kelas'); ?></span></p>
-                                                    <p class="mb-1"><strong><i class="bi bi-info-circle me-2"></i>Status:</strong> <?php $status_badge = ($data['status_siswa'] != 'Aktif') ? 'text-bg-secondary' : 'text-bg-success'; ?><span class="badge <?php echo $status_badge; ?>"><?php echo htmlspecialchars($data['status_siswa']); ?></span></p>
-                                                    <p class="mb-1"><strong><i class="bi bi-person me-2"></i>Username:</strong> <?php echo htmlspecialchars($data['username']); ?></p>
-                                                </div>
-                                                <div class="mt-3 border-top pt-3">
-                                                    <a href="siswa_edit.php?id=<?php echo $data['id_siswa']; ?>" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Edit Siswa"><i class="bi bi-pencil-fill me-1"></i> Edit</a>
-                                                    <a href="admin_aksi.php?aksi=login_sebagai_siswa&id_target=<?php echo $data['id_siswa']; ?>" class="btn btn-outline-warning btn-sm" data-bs-toggle="tooltip" title="Login sebagai <?php echo htmlspecialchars($data['nama_lengkap']); ?>"><i class="bi bi-person-fill-gear"></i></a>
-                                                    <a href="#" onclick="hapusSiswa(<?php echo $data['id_siswa']; ?>)" class="btn btn-outline-danger btn-sm" data-bs-toggle="tooltip" title="Hapus Siswa"><i class="bi bi-trash-fill me-1"></i> Hapus</a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <?php } } else { ?>
-                                    <div class="col-12">
-                                        <div id="no-results-siswa" class="text-center py-5">
-                                            <i class="bi bi-search fs-1 text-muted"></i> <h4 class="mt-3">Siswa tidak ditemukan</h4>
-                                            <p class="text-muted">Tidak ada siswa yang cocok dengan kata kunci pencarian Anda.</p>
-                                        </div>
-                                    </div>
-                                    <?php } ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <div class="dropdown">
+                                                        <button class="btn-action-dots" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-bs-offset="0,5">
+                                                            <i class="bi bi-three-dots-vertical"></i>
+                                                        </button>
+                                                        <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
+                                                            <li><a class="dropdown-item text-warning" href="siswa_edit.php?id=<?php echo $data['id_siswa']; ?>"><i class="bi bi-pencil-square me-2"></i> Edit Data</a></li>
+                                                            <li><hr class="dropdown-divider my-1"></li>
+                                                            <li><a class="dropdown-item text-primary" href="admin_aksi.php?aksi=login_sebagai_siswa&id_target=<?php echo $data['id_siswa']; ?>"><i class="bi bi-person-fill-gear me-2"></i> Login Sebagai</a></li>
+                                                            <li><a class="dropdown-item text-danger" href="#" onclick="hapusSiswa(<?php echo $data['id_siswa']; ?>); return false;"><i class="bi bi-trash me-2"></i> Hapus</a></li>
+                                                        </ul>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php } ?>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </form>
-                            
-                            <!-- Paginasi Siswa -->
-                            <?php if ($total_pages_siswa > 1): ?>
-                            <nav aria-label="Paginasi Siswa" class="mt-4 d-flex justify-content-center">
-                                <ul class="pagination">
-                                    <li class="page-item <?php if($page_siswa <= 1) echo 'disabled'; ?>"><a class="page-link" href="?tab=siswa&search_siswa=<?php echo urlencode($search_siswa); ?>&page_siswa=<?php echo $page_siswa - 1; ?>">Prev</a></li>
-                                    <?php 
-                                    $start_page = max(1, $page_siswa - 2); $end_page = min($total_pages_siswa, $page_siswa + 2);
-                                    if ($start_page > 1) { echo '<li class="page-item"><a class="page-link" href="?tab=siswa&search_siswa='.urlencode($search_siswa).'&page_siswa=1">1</a></li>'; if ($start_page > 2) { echo '<li class="page-item disabled"><span class="page-link">...</span></li>'; } }
-                                    for ($i = $start_page; $i <= $end_page; $i++): ?><li class="page-item <?php if($page_siswa == $i) echo 'active'; ?>"><a class="page-link" href="?tab=siswa&search_siswa=<?php echo urlencode($search_siswa); ?>&page_siswa=<?php echo $i; ?>"><?php echo $i; ?></a></li><?php endfor; 
-                                    if ($end_page < $total_pages_siswa) { if ($end_page < $total_pages_siswa - 1) { echo '<li class="page-item disabled"><span class="page-link">...</span></li>'; } echo '<li class="page-item"><a class="page-link" href="?tab=siswa&search_siswa='.urlencode($search_siswa).'&page_siswa='.$total_pages_siswa.'">'.$total_pages_siswa.'</a></li>'; }
-                                    ?>
-                                    <li class="page-item <?php if($page_siswa >= $total_pages_siswa) echo 'disabled'; ?>"><a class="page-link" href="?tab=siswa&search_siswa=<?php echo urlencode($search_siswa); ?>&page_siswa=<?php echo $page_siswa + 1; ?>">Next</a></li>
-                                </ul>
-                            </nav>
-                            <?php endif; ?>
                         </div>
 
                     </div>
@@ -576,130 +554,126 @@ if (isset($_SESSION['pesan'])) {
 <!-- Footer (untuk memanggil jQuery, dll) -->
 <?php include 'footer.php'; ?>
 
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
 $(document).ready(function(){
-    // Inisialisasi Tooltip Bootstrap (jika footer Anda tidak memilikinya)
+    // Inisialisasi Tooltip Bootstrap
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-});
 
-// Fungsi Hapus GURU
-function hapusGuru(id) {
-    Swal.fire({
-        title: 'Anda yakin?', 
-        text: "Data guru/admin ini akan dihapus secara permanen!", 
-        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', 
-        cancelButtonColor: '#3085d6', confirmButtonText: 'Ya, hapus!', cancelButtonText: 'Batal'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            window.location.href = 'pengguna_aksi.php?aksi=hapus&id=' + id;
-        }
-    })
-}
-
-// Fungsi Hapus SISWA
-function hapusSiswa(id) {
-    Swal.fire({
-        title: 'Anda yakin?', 
-        text: "Data siswa ini akan dihapus permanen, termasuk semua nilai terkait!", 
-        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', 
-        cancelButtonColor: '#3085d6', confirmButtonText: 'Ya, hapus!', cancelButtonText: 'Batal'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            window.location.href = 'siswa_aksi.php?aksi=hapus&id=' + id;
-        }
-    })
-}
-
-// Skrip untuk Drag and Drop
-function setupImportTab(tabPrefix, inputFileElementName) {
-    const dropZone = $(`#drop-zone-${tabPrefix}`);
-    const fileInput = $(`#file-input-${tabPrefix}`);
-    const fileDetails = $(`#file-details-${tabPrefix}`);
-    const importBtn = $(`#btn-import-${tabPrefix}`);
-
-    const handleFile = (file) => {
-        if (file && file.name.endsWith('.xlsx')) {
-            const fileSize = (file.size / 1024).toFixed(2) + ' KB';
-            fileDetails.html(`<div class="d-flex align-items-center"><i class="bi bi-file-earmark-excel-fill fs-2 text-success me-3"></i><div><div class="fw-bold">${file.name}</div><div class="small text-muted">${fileSize}</div></div></div>`);
-            dropZone.find('.drop-zone-prompt').hide();
-            fileDetails.show();
-            importBtn.prop('disabled', false);
-        } else {
-            Swal.fire('Format Salah', 'Harap unggah file dengan format .xlsx', 'error');
-            fileInput.val('');
-            dropZone.find('.drop-zone-prompt').show();
-            fileDetails.hide();
-            importBtn.prop('disabled', true);
-        }
-    };
-    fileInput.on('change', () => { if (fileInput[0].files.length > 0) { handleFile(fileInput[0].files[0]); } });
-    dropZone.on('dragover', (e) => { e.preventDefault(); dropZone.addClass('drag-over'); });
-    dropZone.on('dragleave', () => { dropZone.removeClass('drag-over'); });
-    dropZone.on('drop', (e) => {
-        e.preventDefault(); dropZone.removeClass('drag-over');
-        const files = e.originalEvent.dataTransfer.files;
-        if (files.length > 0) {
-            const dataTransfer = new DataTransfer(); dataTransfer.items.add(files[0]);
-            fileInput[0].files = dataTransfer.files;
-            handleFile(files[0]);
-        }
+    // Inisialisasi DataTables untuk tabel Guru
+    const dtGuru = $('#tabelGuru').DataTable({
+        language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/id.json' },
+        pageLength: 25,
+        dom: '<"row align-items-center mb-3"<"col-md-6"l><"col-md-6"f>>rt<"row align-items-center mt-3"<"col-md-6"i><"col-md-6"p>>',
+        columnDefs: [ { orderable: false, targets: [0, 2, 6] } ] // Disable sort for checkbox, foto, aksi
     });
-}
-setupImportTab('guru', 'file_pengguna');
-// setupImportTab('guru-mengajar', 'file_guru_mengajar'); // DIHAPUS
-setupImportTab('siswa', 'file_siswa_lengkap');
 
-// Logika untuk Bulk Delete GURU
-$(document).ready(function() {
+    // Inisialisasi DataTables untuk tabel Siswa
+    const dtSiswa = $('#tabelSiswa').DataTable({
+        language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/id.json' },
+        pageLength: 25,
+        dom: '<"row align-items-center mb-3"<"col-md-6"l><"col-md-6"f>>rt<"row align-items-center mt-3"<"col-md-6"i><"col-md-6"p>>',
+        columnDefs: [ { orderable: false, targets: [0, 2, 6] } ] // Disable sort for checkbox, foto, aksi
+    });
+
+    // Handle "Check All" functionality inside DataTables pages
+    $('#checkAllGuru').on('change', function() {
+        const isChecked = $(this).is(':checked');
+        dtGuru.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-guru').prop('checked', isChecked);
+        updateActionBarGuru();
+    });
+    $('#checkAllSiswa').on('change', function() {
+        const isChecked = $(this).is(':checked');
+        dtSiswa.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-siswa').prop('checked', isChecked);
+        updateActionBarSiswa();
+    });
+
+    // Handle individual checkbox changes
+    $('#tabelGuru tbody').on('change', '.bulk-checkbox-guru', function() {
+        const allChecked = dtGuru.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-guru').length === dtGuru.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-guru:checked').length;
+        $('#checkAllGuru').prop('checked', allChecked);
+        updateActionBarGuru();
+    });
+    $('#tabelSiswa tbody').on('change', '.bulk-checkbox-siswa', function() {
+        const allChecked = dtSiswa.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-siswa').length === dtSiswa.rows({page: 'current'}).nodes().to$().find('.bulk-checkbox-siswa:checked').length;
+        $('#checkAllSiswa').prop('checked', allChecked);
+        updateActionBarSiswa();
+    });
+
+    // Import Tab Setup (Drag and Drop)
+    function setupImportTab(tabPrefix, inputFileElementName) {
+        const dropZone = $(`#drop-zone-${tabPrefix}`);
+        const fileInput = $(`#file-input-${tabPrefix}`);
+        const fileDetails = $(`#file-details-${tabPrefix}`);
+        const importBtn = $(`#btn-import-${tabPrefix}`);
+
+        const handleFile = (file) => {
+            if (file && file.name.endsWith('.xlsx')) {
+                const fileSize = (file.size / 1024).toFixed(2) + ' KB';
+                fileDetails.html(`<div class="d-flex align-items-center"><i class="bi bi-file-earmark-excel-fill fs-2 text-success me-3"></i><div><div class="fw-bold">${file.name}</div><div class="small text-muted">${fileSize}</div></div></div>`);
+                dropZone.find('.drop-zone-prompt').hide();
+                fileDetails.show();
+                importBtn.prop('disabled', false);
+            } else {
+                Swal.fire('Format Salah', 'Harap unggah file dengan format .xlsx', 'error');
+                fileInput.val('');
+                dropZone.find('.drop-zone-prompt').show();
+                fileDetails.hide();
+                importBtn.prop('disabled', true);
+            }
+        };
+        fileInput.on('change', () => { if (fileInput[0].files.length > 0) { handleFile(fileInput[0].files[0]); } });
+        dropZone.on('dragover', (e) => { e.preventDefault(); dropZone.addClass('drag-over'); });
+        dropZone.on('dragleave', () => { dropZone.removeClass('drag-over'); });
+        dropZone.on('drop', (e) => {
+            e.preventDefault(); dropZone.removeClass('drag-over');
+            const files = e.originalEvent.dataTransfer.files;
+            if (files.length > 0) {
+                const dataTransfer = new DataTransfer(); dataTransfer.items.add(files[0]);
+                fileInput[0].files = dataTransfer.files;
+                handleFile(files[0]);
+            }
+        });
+    }
+    setupImportTab('guru', 'file_pengguna');
+    setupImportTab('siswa', 'file_siswa_lengkap');
+
+    // Bulk Delete Action Bars
     const $actionBarGuru = $('#bulk-action-bar-guru');
     const $countSpanGuru = $('#selected-count-guru');
-    const $checkboxesGuru = $('.bulk-checkbox-guru');
     function updateActionBarGuru() {
-        const count = $checkboxesGuru.filter(':checked').length;
+        const count = dtGuru.$('.bulk-checkbox-guru:checked').length;
         $countSpanGuru.text(count);
         $actionBarGuru.toggleClass('show', count > 0);
     }
-    $checkboxesGuru.on('change', function() {
-        $(this).closest('.user-card').toggleClass('selected', $(this).is(':checked'));
-        updateActionBarGuru();
-    });
     $('#btn-bulk-delete-guru').on('click', function() {
-        const count = $checkboxesGuru.filter(':checked').length;
+        const count = dtGuru.$('.bulk-checkbox-guru:checked').length;
         Swal.fire({
             title: `Anda yakin?`, text: `Anda akan menghapus ${count} guru/admin secara permanen.`,
             icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', 
             cancelButtonColor: '#3085d6', confirmButtonText: 'Ya, Hapus!', cancelButtonText: 'Batal'
         }).then((result) => { if (result.isConfirmed) { $('#form-bulk-delete-guru').submit(); } });
     });
-    updateActionBarGuru();
-});
 
-// Logika untuk Bulk Delete SISWA
-$(document).ready(function() {
     const $actionBarSiswa = $('#bulk-action-bar-siswa');
     const $countSpanSiswa = $('#selected-count-siswa');
-    const $checkboxesSiswa = $('.bulk-checkbox-siswa');
     function updateActionBarSiswa() {
-        const count = $checkboxesSiswa.filter(':checked').length;
+        const count = dtSiswa.$('.bulk-checkbox-siswa:checked').length;
         $countSpanSiswa.text(count);
         $actionBarSiswa.toggleClass('show', count > 0);
     }
-    $checkboxesSiswa.on('change', function() {
-        $(this).closest('.user-card').toggleClass('selected', $(this).is(':checked'));
-        updateActionBarSiswa();
-    });
     $('#btn-bulk-delete-siswa').on('click', function() {
-        const count = $checkboxesSiswa.filter(':checked').length;
+        const count = dtSiswa.$('.bulk-checkbox-siswa:checked').length;
         Swal.fire({
             title: `Anda yakin?`, text: `Anda akan menghapus ${count} siswa secara permanen.`,
             icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', 
             cancelButtonColor: '#3085d6', confirmButtonText: 'Ya, Hapus!', cancelButtonText: 'Batal'
         }).then((result) => { if (result.isConfirmed) { $('#form-bulk-delete-siswa').submit(); } });
     });
-    updateActionBarSiswa();
 });
 
 // Penyesuaian posisi action bar saat sidebar di-toggle (Sesuai header.php Anda)

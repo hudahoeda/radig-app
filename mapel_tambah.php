@@ -8,6 +8,9 @@ if ($_SESSION['role'] != 'admin') {
     include 'footer.php'; // Tambahkan footer agar script Swal bisa dieksekusi
     exit;
 }
+
+// Ambil daftar mapel untuk opsi induk
+$mapel_induk_query = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel FROM mata_pelajaran ORDER BY nama_mapel ASC");
 ?>
 
 <style>
@@ -64,6 +67,43 @@ if ($_SESSION['role'] != 'admin') {
                         <label for="nama_mapel" class="form-label fw-bold">Nama Mata Pelajaran</label>
                         <input type="text" class="form-control" id="nama_mapel" name="nama_mapel" placeholder="Contoh: Matematika" required>
                         <div class="invalid-feedback">Nama mata pelajaran wajib diisi.</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="parent_mapel_id" class="form-label fw-bold">Gabung ke Mapel Induk (Opsional)</label>
+                        <select class="form-select" id="parent_mapel_id" name="parent_mapel_id">
+                            <option value="">-- Tidak Digabung (Berdiri Sendiri) --</option>
+                            <?php while($m = mysqli_fetch_assoc($mapel_induk_query)): ?>
+                                <option value="<?php echo $m['id_mapel']; ?>"><?php echo htmlspecialchars($m['nama_mapel']); ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                        <div class="form-text">Pilih mapel jika nilai ini ingin dirata-rata ke mapel lain.</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Cetak Sebagai Lampiran?</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="is_tambahan" name="is_tambahan" value="1">
+                            <label class="form-check-label" for="is_tambahan">Ya, tampilkan di Lembar Lampiran Tambahan</label>
+                        </div>
+                        <div class="form-text">Centang jika mapel ini tambahan dan tidak masuk ke Rapor Dinas Utama.</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label for="agama_khusus" class="form-label fw-bold">Batasi Khusus Agama Tertentu (Opsional)</label>
+                        <select class="form-select" id="agama_khusus" name="agama_khusus">
+                            <option value="">-- Semua Agama (Tanpa Pengecualian) --</option>
+                            <option value="Islam">Hanya untuk Siswa Islam</option>
+                            <option value="Kristen">Hanya untuk Siswa Kristen</option>
+                            <option value="Katolik">Hanya untuk Siswa Katolik</option>
+                            <option value="Hindu">Hanya untuk Siswa Hindu</option>
+                            <option value="Buddha">Hanya untuk Siswa Buddha</option>
+                            <option value="Khonghucu">Hanya untuk Siswa Khonghucu</option>
+                        </select>
+                        <div class="form-text text-danger"><i class="bi bi-info-circle me-1"></i>Jika diatur, hanya siswa dengan agama yang dipilih yang akan muncul di form input nilai guru dan dicetakkan mapel ini di rapornya.</div>
                     </div>
                 </div>
                 

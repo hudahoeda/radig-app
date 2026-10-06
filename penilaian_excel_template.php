@@ -16,7 +16,7 @@ $penilaian = mysqli_fetch_assoc($q_penilaian);
 if (!$penilaian) die("Error: Penilaian tidak ditemukan.");
 
 // Ambil daftar siswa dari kelas terkait
-$q_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif' ORDER BY nama_lengkap ASC");
+$q_siswa = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = {$penilaian['id_kelas']} OR r.id_kelas = {$penilaian['id_kelas']}) ORDER BY s.nama_lengkap ASC");
 
 // Membuat objek spreadsheet baru
 $spreadsheet = new Spreadsheet();

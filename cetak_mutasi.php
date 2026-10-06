@@ -21,7 +21,7 @@ $siswa = mysqli_fetch_assoc(mysqli_stmt_get_result($q_siswa));
 if (!$siswa) die("Siswa tidak ditemukan.");
 
 // 2. Ambil data kepala sekolah (termasuk jabatan)
-$q_sekolah = mysqli_query($koneksi, "SELECT nama_kepsek, nip_kepsek, jabatan_kepsek FROM sekolah WHERE id_sekolah = 1");
+$q_sekolah = mysqli_query($koneksi, "SELECT nama_kepsek, nip_kepsek, jabatan_kepsek FROM sekolah LIMIT 1");
 $sekolah = mysqli_fetch_assoc($q_sekolah);
 
 // 3. Ambil data mutasi yang relevan
@@ -86,8 +86,12 @@ ob_start();
                         Kepala Sekolah,
                         <div class="signature-space"></div>
                         <b><u><?php echo htmlspecialchars($sekolah['nama_kepsek']); ?></u></b><br>
-                        <?php echo htmlspecialchars($sekolah['jabatan_kepsek']); ?><br>
-                        NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek']); ?>
+                        <?php if (!empty(trim($sekolah['jabatan_kepsek'] ?? ''))): ?>
+                            <?php echo htmlspecialchars($sekolah['jabatan_kepsek']); ?><br>
+                        <?php endif; ?>
+                        <?php if (!empty(trim($sekolah['nip_kepsek'] ?? ''))): ?>
+                            NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek']); ?>
+                        <?php endif; ?>
                         <div style="margin-top: 1cm;">Orang Tua/Wali,</div>
                         <div class="signature-space"></div>
                         ...........................................
@@ -126,8 +130,12 @@ ob_start();
                         Kepala Sekolah,
                         <div class="signature-space"></div>
                         <b><u><?php echo htmlspecialchars($sekolah['nama_kepsek']); ?></u></b><br>
-                        <?php echo htmlspecialchars($sekolah['jabatan_kepsek']); ?><br>
-                        NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek']); ?>
+                        <?php if (!empty(trim($sekolah['jabatan_kepsek'] ?? ''))): ?>
+                            <?php echo htmlspecialchars($sekolah['jabatan_kepsek']); ?><br>
+                        <?php endif; ?>
+                        <?php if (!empty(trim($sekolah['nip_kepsek'] ?? ''))): ?>
+                            NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek']); ?>
+                        <?php endif; ?>
                     </div>
                 </td>
             </tr>

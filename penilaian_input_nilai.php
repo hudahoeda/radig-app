@@ -17,7 +17,7 @@ if ($id_penilaian == 0) {
 }
 
 // Ambil detail penilaian, kelas, dan mapel
-$query_penilaian = "SELECT p.*, k.nama_kelas, m.nama_mapel FROM penilaian p
+$query_penilaian = "SELECT p.*, k.nama_kelas, m.nama_mapel, m.agama_khusus FROM penilaian p
                     JOIN kelas k ON p.id_kelas = k.id_kelas
                     JOIN mata_pelajaran m ON p.id_mapel = m.id_mapel
                     WHERE p.id_penilaian = ?";
@@ -35,7 +35,7 @@ if (!$penilaian) {
 
 // === BAGIAN BARU: Ambil data Tujuan Pembelajaran (TP) yang terkait ===
 $query_tp = mysqli_prepare($koneksi, "
-    SELECT tp.deskripsi_tp 
+    SELECT tp.deskripsi_tp, tp.kktp
     FROM tujuan_pembelajaran tp
     JOIN penilaian_tp pt ON tp.id_tp = pt.id_tp
     WHERE pt.id_penilaian = ?
@@ -44,9 +44,12 @@ mysqli_stmt_bind_param($query_tp, "i", $id_penilaian);
 mysqli_stmt_execute($query_tp);
 $result_tp = mysqli_stmt_get_result($query_tp);
 $tujuan_pembelajaran = [];
+$total_kktp = 0;
 while ($row = mysqli_fetch_assoc($result_tp)) {
     $tujuan_pembelajaran[] = $row['deskripsi_tp'];
+    $total_kktp += (int)($row['kktp'] ?? 75);
 }
+$avg_kktp = count($tujuan_pembelajaran) > 0 ? round($total_kktp / count($tujuan_pembelajaran)) : 75;
 // ===================================================================
 
 // --- AWAL MODIFIKASI: Filter Siswa Berdasarkan Agama ---
@@ -55,26 +58,42 @@ $nama_mapel_lower = strtolower($penilaian['nama_mapel']);
 $agama_terdeteksi = null;
 
 // Daftar agama yang akan diperiksa.
-// Sesuaikan ejaan ini agar MATCH persis
-// dengan nilai yang tersimpan di kolom `siswa.agama`.
 $agama_list = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Khonghucu'];
 
 foreach ($agama_list as $agama) {
-    // Kita cek menggunakan strpos di nama mapel (case-insensitive)
-    if (strpos($nama_mapel_lower, strtolower($agama)) !== false) {
-        // Jika ditemukan (misal mapel "P. Agama Islam", $agama = "Islam")
-        // Kita simpan nama agama (case-sensitive) dari $agama_list
-        $agama_terdeteksi = $agama;
-        break;
+    $cek_agama = strtolower($agama);
+
+    // Normalisasi Buddha/Budha dan Khonghucu/Konghucu
+    if ($cek_agama == 'buddha') {
+        if (strpos($nama_mapel_lower, 'buddha') !== false || strpos($nama_mapel_lower, 'budha') !== false) {
+            $agama_terdeteksi = $agama;
+            break;
+        }
+    } elseif ($cek_agama == 'khonghucu') {
+        if (strpos($nama_mapel_lower, 'khonghucu') !== false || strpos($nama_mapel_lower, 'konghucu') !== false) {
+            $agama_terdeteksi = $agama;
+            break;
+        }
+    } else {
+        if (strpos($nama_mapel_lower, $cek_agama) !== false) {
+            $agama_terdeteksi = $agama;
+            break;
+        }
     }
 }
 
 // Buat query dasar untuk mengambil siswa
 // Pastikan tabel siswa memiliki kolom 'agama'
-$query_siswa_sql = "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif'";
+$query_siswa_sql = "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = {$penilaian['id_kelas']} OR r.id_kelas = {$penilaian['id_kelas']})";
 
-// Jika mapel adalah mapel agama (ditemukan di $agama_list), tambahkan filter agama
-if ($agama_terdeteksi !== null) {
+// Jika mapel membatasi agama_khusus, utamakan filter tersebut
+if (!empty($penilaian['agama_khusus'])) {
+    $agama_filter_sql = mysqli_real_escape_string($koneksi, $penilaian['agama_khusus']);
+    $query_siswa_sql .= " AND agama = '$agama_filter_sql'";
+    $agama_terdeteksi = $penilaian['agama_khusus']; // Untuk info di tabel bawah
+}
+// Jika tidak, cek apakah nama mapelnya mengandung unsur agama (logika lama)
+elseif ($agama_terdeteksi !== null) {
     // $agama_terdeteksi berisi 'Islam', 'Kristen', 'Katolik', dll.
     // Kita escape string untuk keamanan query
     $agama_filter_sql = mysqli_real_escape_string($koneksi, $agama_terdeteksi);
@@ -91,7 +110,7 @@ $query_siswa = mysqli_query($koneksi, $query_siswa_sql);
 // --- AKHIR MODIFIKASI ---
 
 // Baris Asli:
-// $query_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = {$penilaian['id_kelas']} AND status_siswa = 'Aktif' ORDER BY nama_lengkap ASC");
+// $query_siswa = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = {$penilaian['id_kelas']} OR r.id_kelas = {$penilaian['id_kelas']}) AND s.status_siswa = 'Aktif' ORDER BY s.nama_lengkap ASC");
 
 
 // Ambil nilai yang sudah ada
@@ -109,7 +128,8 @@ while ($n = mysqli_fetch_assoc($result_nilai)) {
 // =============================================
 $q_kkm_input = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'kkm' LIMIT 1");
 $kkm_input_db = mysqli_fetch_assoc($q_kkm_input);
-$kkm = $kkm_input_db ? (int)$kkm_input_db['nilai_pengaturan'] : 75; // Default ke 75 jika KKM tidak ada di DB
+$kkm = $avg_kktp; // Menggunakan rata-rata KKTP dari TP yang diujikan
+$kkm_global = $kkm_input_db ? (int)$kkm_input_db['nilai_pengaturan'] : 75;
 // =============================================
 // === AKHIR PERUBAHAN ===
 // =============================================
@@ -196,7 +216,7 @@ $kkm = $kkm_input_db ? (int)$kkm_input_db['nilai_pengaturan'] : 75; // Default k
     <div class="card shadow-sm">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="bi bi-pencil-fill me-2" style="color: var(--primary-color);"></i>Daftar Siswa & Input Nilai</h5>
-            <span class="badge bg-info">Batas Tuntas (KKM): <?php echo $kkm; ?></span>
+            <span class="badge bg-info">Batas Tuntas (KKTP): <?php echo $kkm; ?></span>
         </div>
         <form action="penilaian_aksi.php?aksi=simpan_nilai" method="POST">
             <input type="hidden" name="id_penilaian" value="<?php echo $id_penilaian; ?>">

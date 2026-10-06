@@ -224,11 +224,8 @@ $result_kelas = mysqli_query($koneksi, $query_kelas);
                                         <tr>
                                             <td class="text-center"><?php echo $no++; ?></td>
                                             <td style="width: 50px;">
-                                                <?php 
-                                                $foto_path = !empty($siswa['foto_siswa']) ? 'uploads/foto_siswa/' . $siswa['foto_siswa'] : '';
-                                                if (!empty($foto_path) && file_exists($foto_path)): 
-                                                ?>
-                                                    <img src="<?php echo htmlspecialchars($foto_path); ?>" alt="Foto Siswa">
+                                                <?php if (!empty($siswa['foto_siswa'])): ?>
+                                                    <img src="uploads/foto_siswa/<?php echo htmlspecialchars($siswa['foto_siswa']); ?>" alt="Foto" onerror="this.onerror=null; this.outerHTML='<div class=\'profile-icon-placeholder\'><i class=\'bi bi-person-fill\'></i></div>';">
                                                 <?php else: ?>
                                                     <div class="profile-icon-placeholder"><i class="bi bi-person-fill"></i></div>
                                                 <?php endif; ?>
@@ -318,11 +315,8 @@ $result_kelas = mysqli_query($koneksi, $query_kelas);
                                         <tr>
                                             <td class="text-center"><?php echo $no++; ?></td>
                                             <td style="width: 50px;">
-                                                <?php 
-                                                $foto_path = !empty($siswa['foto_siswa']) ? 'uploads/foto_siswa/' . $siswa['foto_siswa'] : '';
-                                                if (!empty($foto_path) && file_exists($foto_path)): 
-                                                ?>
-                                                    <img src="<?php echo htmlspecialchars($foto_path); ?>" alt="Foto Siswa">
+                                                <?php if (!empty($siswa['foto_siswa'])): ?>
+                                                    <img src="uploads/foto_siswa/<?php echo htmlspecialchars($siswa['foto_siswa']); ?>" alt="Foto" onerror="this.onerror=null; this.outerHTML='<div class=\'profile-icon-placeholder\'><i class=\'bi bi-person-fill\'></i></div>';">
                                                 <?php else: ?>
                                                     <div class="profile-icon-placeholder"><i class="bi bi-person-fill"></i></div>
                                                 <?php endif; ?>

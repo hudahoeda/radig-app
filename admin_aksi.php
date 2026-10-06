@@ -21,44 +21,55 @@ if ($aksi == 'kembali' && isset($_SESSION['admin_asal_id'])) {
 
 switch ($aksi) {
 
-    // Aksi untuk memproses kenaikan kelas dan kelulusan
-    case 'proses_kenaikan_siswa':
-        // Ganti nama aksi ini agar tidak bentrok dengan yang lama jika ada
-        if (!isset($_POST['id_siswa']) || !isset($_POST['tindakan'])) {
-            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Silakan pilih minimal satu siswa dan satu tindakan.']);
-            header('Location: ' . $_SERVER['HTTP_REFERER']); // Kembali ke halaman sebelumnya
-            exit;
-        }
-
-        $daftar_id_siswa = $_POST['id_siswa']; // Ini adalah array
-        $tindakan = $_POST['tindakan'];
-        $id_kelas_baru = isset($_POST['id_kelas_baru']) ? (int)$_POST['id_kelas_baru'] : 0;
-        $id_kelas_lama = (int)$_POST['id_kelas_lama'];
-
-        if ($tindakan == 'naik' && $id_kelas_baru == 0) {
-            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Untuk tindakan "Naik Kelas", Anda wajib memilih kelas tujuan.']);
+    // Aksi untuk memproses kenaikan kelas dan kelulusan secara massal individual
+    case 'proses_kenaikan_siswa_massal':
+        if (!isset($_POST['id_siswa']) || !is_array($_POST['id_siswa'])) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Tidak ada data siswa yang diproses.']);
             header('Location: ' . $_SERVER['HTTP_REFERER']);
             exit;
         }
+
+        $daftar_id_siswa = $_POST['id_siswa']; // Ini adalah array [id1, id2, ...]
+        $arr_tindakan = $_POST['tindakan'] ?? []; // Ini array [id1 => 'naik', id2 => 'tinggal', ...]
+        $arr_kelas_baru = $_POST['id_kelas_baru'] ?? []; // Ini array [id1 => '1', id2 => '2', ...]
+        $id_kelas_lama = (int)$_POST['id_kelas_lama'];
 
         mysqli_begin_transaction($koneksi);
         try {
             $stmt_lulus = mysqli_prepare($koneksi, "UPDATE siswa SET status_siswa = 'Lulus', id_kelas = NULL WHERE id_siswa = ?");
             $stmt_naik = mysqli_prepare($koneksi, "UPDATE siswa SET id_kelas = ? WHERE id_siswa = ?");
+            // Untuk tinggal kelas, tidak ada perubahan pada database yang diperlukan selain log historis (kalau ada),
+            // tetapi untuk amannya pastikan statusnya aktif dan tetap di id_kelas_lama.
+            $stmt_tinggal = mysqli_prepare($koneksi, "UPDATE siswa SET id_kelas = ?, status_siswa = 'Aktif' WHERE id_siswa = ?");
             
+            $proses_count = 0;
+
             foreach ($daftar_id_siswa as $id_siswa) {
+                // Lewati jika tindakan tidak diset (walau di UI sudah required)
+                if (!isset($arr_tindakan[$id_siswa]) || empty($arr_tindakan[$id_siswa])) continue;
+
+                $tindakan = $arr_tindakan[$id_siswa];
+
                 if ($tindakan == 'luluskan') {
                     mysqli_stmt_bind_param($stmt_lulus, "i", $id_siswa);
                     mysqli_stmt_execute($stmt_lulus);
+                    $proses_count++;
                 } elseif ($tindakan == 'naik') {
-                    mysqli_stmt_bind_param($stmt_naik, "ii", $id_kelas_baru, $id_siswa);
-                    mysqli_stmt_execute($stmt_naik);
+                    $id_kls_baru = isset($arr_kelas_baru[$id_siswa]) ? (int)$arr_kelas_baru[$id_siswa] : 0;
+                    if ($id_kls_baru > 0) {
+                        mysqli_stmt_bind_param($stmt_naik, "ii", $id_kls_baru, $id_siswa);
+                        mysqli_stmt_execute($stmt_naik);
+                        $proses_count++;
+                    }
+                } elseif ($tindakan == 'tinggal') {
+                    mysqli_stmt_bind_param($stmt_tinggal, "ii", $id_kelas_lama, $id_siswa);
+                    mysqli_stmt_execute($stmt_tinggal);
+                    $proses_count++;
                 }
             }
 
             mysqli_commit($koneksi);
-            $jumlah_siswa = count($daftar_id_siswa);
-            $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Proses Selesai', 'text' => "$jumlah_siswa siswa telah berhasil diproses."]);
+            $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Proses Selesai', 'text' => "$proses_count siswa telah berhasil diproses ke Tahun Ajaran Baru."]);
         
         } catch (Exception $e) {
             mysqli_rollback($koneksi);

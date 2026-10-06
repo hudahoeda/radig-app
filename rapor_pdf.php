@@ -75,17 +75,33 @@ $margin_raw = (isset($pengaturan_pdf['margin_atas_tanpa_kop']) && $pengaturan_pd
               : '1'; 
 $margin_atas = str_replace(',', '.', $margin_raw);
 
+// [KOP DESIGNER] Text & Toggle
+$kop_baris_1 = $pengaturan_pdf['kop_baris_1'] ?? 'PEMERINTAH KABUPATEN ' . strtoupper($sekolah_pdf['kabupaten_kota'] ?? '');
+$kop_baris_2 = $pengaturan_pdf['kop_baris_2'] ?? 'DINAS PENDIDIKAN';
+$kop_baris_3 = $pengaturan_pdf['kop_baris_3'] ?? strtoupper($sekolah_pdf['nama_sekolah'] ?? '');
+$kop_baris_4 = $pengaturan_pdf['kop_baris_4'] ?? ($sekolah_pdf['jalan'] ?? '') . ', Desa/Kel. ' . ($sekolah_pdf['desa_kelurahan'] ?? '') . ', Kec. ' . ($sekolah_pdf['kecamatan'] ?? '') . '<br>Telp: ' . ($sekolah_pdf['telepon'] ?? '') . ' Email: ' . ($sekolah_pdf['email'] ?? '');
+$kop_logo_kiri_tampil = $pengaturan_pdf['kop_logo_kiri_tampil'] ?? '1';
+$kop_logo_kanan_tampil = $pengaturan_pdf['kop_logo_kanan_tampil'] ?? '1';
+$logo_kiri = $pengaturan_pdf['logo_kiri'] ?? 'logo_kabupaten.png';
+
 // Ambil KKM (Default 75 jika tidak ada di DB)
 $kkm = isset($pengaturan_pdf['kkm']) ? (int)$pengaturan_pdf['kkm'] : 75;
 
-// Ambil Tahun Ajaran Aktif
-$q_ta_pdf = mysqli_query($koneksi, "SELECT id_tahun_ajaran, tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
-$d_ta_pdf = mysqli_fetch_assoc($q_ta_pdf);
-$id_tahun_ajaran_pdf = $d_ta_pdf['id_tahun_ajaran'] ?? 0;
-$tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'] ?? '-';
+// Ambil Tahun Ajaran & Semester (Prioritas Parameter GET, Fallback Global Aktif)
+if (isset($_GET['ta']) && isset($_GET['semester'])) {
+    $id_tahun_ajaran_pdf = (int)$_GET['ta'];
+    $semester_aktif_pdf = (int)$_GET['semester'];
+    $q_ta_pdf = mysqli_query($koneksi, "SELECT tahun_ajaran FROM tahun_ajaran WHERE id_tahun_ajaran = $id_tahun_ajaran_pdf LIMIT 1");
+    $d_ta_pdf = mysqli_fetch_assoc($q_ta_pdf);
+    $tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'] ?? '-';
+} else {
+    $q_ta_pdf = mysqli_query($koneksi, "SELECT id_tahun_ajaran, tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
+    $d_ta_pdf = mysqli_fetch_assoc($q_ta_pdf);
+    $id_tahun_ajaran_pdf = $d_ta_pdf['id_tahun_ajaran'] ?? 0;
+    $tahun_ajaran_pdf = $d_ta_pdf['tahun_ajaran'] ?? '-';
+    $semester_aktif_pdf = $pengaturan_pdf['semester_aktif'] ?? 1;
+}
 
-// Ambil Parameter Rapor dari Pengaturan
-$semester_aktif_pdf = $pengaturan_pdf['semester_aktif'] ?? 1;
 $semester_text_pdf = ($semester_aktif_pdf == 1) ? '1 (Ganjil)' : '2 (Genap)';
 
 // Implementasi Tanggal Indo
@@ -93,7 +109,7 @@ $tanggal_rapor_db = $pengaturan_pdf['tanggal_rapor'] ?? date("Y-m-d");
 $tanggal_rapor_pdf = tanggal_indo($tanggal_rapor_db);
 
 // Ambil Data Sekolah
-$q_sekolah_pdf = mysqli_query($koneksi, "SELECT * FROM sekolah WHERE id_sekolah = 1");
+$q_sekolah_pdf = mysqli_query($koneksi, "SELECT * FROM sekolah LIMIT 1");
 $sekolah_pdf = mysqli_fetch_assoc($q_sekolah_pdf);
 
 // =======================================================================
@@ -171,13 +187,16 @@ if ($tampil_kop_img && !empty($file_kop)) {
     }
 }
 
-// C. Logo Kabupaten
-$base64_kab_pdf = '';
-$path_kab_pdf = 'uploads/logo_kabupaten.png';
-if (file_exists($path_kab_pdf)) {
-    $type_kab_pdf = pathinfo($path_kab_pdf, PATHINFO_EXTENSION);
-    $data_kab_pdf = file_get_contents($path_kab_pdf);
-    $base64_kab_pdf = 'data:image/' . $type_kab_pdf . ';base64,' . base64_encode($data_kab_pdf);
+// C. Logo Kiri (Instansi)
+$base64_kiri_pdf = '';
+$path_kiri_pdf = 'uploads/' . $logo_kiri;
+if (!file_exists($path_kiri_pdf)) {
+    $path_kiri_pdf = 'uploads/logo_kabupaten.png';
+}
+if (file_exists($path_kiri_pdf)) {
+    $type_kiri_pdf = pathinfo($path_kiri_pdf, PATHINFO_EXTENSION);
+    $data_kiri_pdf = file_get_contents($path_kiri_pdf);
+    $base64_kiri_pdf = 'data:image/' . $type_kiri_pdf . ';base64,' . base64_encode($data_kiri_pdf);
 }
 
 // D. Logo Sekolah
@@ -217,6 +236,28 @@ mysqli_stmt_execute($q_rapor);
 $rapor_pdf = mysqli_fetch_assoc(mysqli_stmt_get_result($q_rapor));
 $id_rapor = $rapor_pdf['id_rapor'] ?? 0;
 
+// --- CEK DATA HISTORIS ---
+if ($rapor_pdf && isset($rapor_pdf['id_kelas_historis']) && !empty($rapor_pdf['id_kelas_historis'])) {
+    $id_kelas_siswa = $rapor_pdf['id_kelas_historis'];
+    $id_wali_hist = $rapor_pdf['id_walikelas_historis'];
+
+    $q_hist = mysqli_query($koneksi, "SELECT k.nama_kelas, k.fase, g.nama_guru, g.nip FROM kelas k LEFT JOIN guru g ON k.id_wali_kelas = g.id_guru WHERE k.id_kelas = $id_kelas_siswa LIMIT 1");
+    if ($d_hist = mysqli_fetch_assoc($q_hist)) {
+        $siswa_pdf['nama_kelas'] = $d_hist['nama_kelas'];
+        $siswa_pdf['fase'] = $d_hist['fase'];
+        if (!empty($id_wali_hist)) {
+            $qw = mysqli_query($koneksi, "SELECT nama_guru, nip FROM guru WHERE id_guru = $id_wali_hist LIMIT 1");
+            if ($dw = mysqli_fetch_assoc($qw)) {
+                $siswa_pdf['nama_walikelas'] = $dw['nama_guru'];
+                $siswa_pdf['nip_walikelas'] = $dw['nip'];
+            }
+        } else {
+            $siswa_pdf['nama_walikelas'] = $d_hist['nama_guru'];
+            $siswa_pdf['nip_walikelas'] = $d_hist['nip'];
+        }
+    }
+}
+// --- END CEK HISTORIS ---
 $is_draft = false;
 if (!$rapor_pdf || (isset($rapor_pdf['status']) && $rapor_pdf['status'] == 'Draft')) {
     $is_draft = true;
@@ -232,6 +273,8 @@ $show_nilai_column_pdf = true;
 // =======================================================================
 // 6. LOGIKA PENGAMBILAN MATA PELAJARAN (FILTER AGAMA & KELAS)
 // =======================================================================
+$semua_mapel_query_pdf = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel, kelompok, is_tambahan, parent_mapel_id FROM mata_pelajaran ORDER BY urutan ASC, nama_mapel ASC");
+
 $q_mapel_agama_all = mysqli_query($koneksi, "
     SELECT id_mapel, nama_mapel 
     FROM mata_pelajaran 
@@ -246,7 +289,24 @@ while ($row_agama = mysqli_fetch_assoc($q_mapel_agama_all)) {
     $ids_semua_mapel_agama[] = $row_agama['id_mapel'];
     
     $nama_mapel_kecil = strtolower($row_agama['nama_mapel']);
-    if (!empty($agama_siswa_clean) && strpos($nama_mapel_kecil, $agama_siswa_clean) !== false) {
+
+    // Normalisasi Buddha/Budha dan Khonghucu/Konghucu
+    $match = false;
+    if ($agama_siswa_clean == 'buddha' || $agama_siswa_clean == 'budha') {
+        if (strpos($nama_mapel_kecil, 'buddha') !== false || strpos($nama_mapel_kecil, 'budha') !== false) {
+            $match = true;
+        }
+    } elseif ($agama_siswa_clean == 'khonghucu' || $agama_siswa_clean == 'konghucu') {
+        if (strpos($nama_mapel_kecil, 'khonghucu') !== false || strpos($nama_mapel_kecil, 'konghucu') !== false) {
+            $match = true;
+        }
+    } else {
+        if (!empty($agama_siswa_clean) && strpos($nama_mapel_kecil, $agama_siswa_clean) !== false) {
+            $match = true;
+        }
+    }
+
+    if ($match) {
         $id_mapel_agama_siswa_pdf = $row_agama['id_mapel'];
     }
 }
@@ -255,11 +315,15 @@ $semua_id_mapel_agama_string_pdf = implode(',', $ids_semua_mapel_agama);
 if (empty($semua_id_mapel_agama_string_pdf)) { $semua_id_mapel_agama_string_pdf = '0'; }
 
 $query_mapel_string_pdf = "
-    SELECT mp.id_mapel, mp.nama_mapel, mp.urutan 
+    SELECT mp.id_mapel, mp.nama_mapel, mp.urutan, mp.parent_mapel_id, mp.is_tambahan, mp.agama_khusus
     FROM mata_pelajaran AS mp
     JOIN guru_mengajar AS gm ON mp.id_mapel = gm.id_mapel
     WHERE gm.id_kelas = $id_kelas_siswa AND gm.id_tahun_ajaran = $id_tahun_ajaran_pdf
 ";
+
+// [MODIFIKASI] Filter mapel berdasarkan agama khusus
+$agama_filter_aman_pdf = mysqli_real_escape_string($koneksi, $siswa_pdf['agama'] ?? '');
+$query_mapel_string_pdf .= " AND (mp.agama_khusus IS NULL OR mp.agama_khusus = '' OR mp.agama_khusus = '$agama_filter_aman_pdf') ";
 
 if ($id_mapel_agama_siswa_pdf > 0) {
     $query_mapel_string_pdf .= " AND (mp.id_mapel NOT IN ($semua_id_mapel_agama_string_pdf) OR mp.id_mapel = $id_mapel_agama_siswa_pdf)";
@@ -289,6 +353,7 @@ if ($id_rapor > 0) {
     }
 }
 
+$semua_mapel_raw = [];
 if ($semua_mapel_query_pdf) { 
     while ($mapel_pdf = mysqli_fetch_assoc($semua_mapel_query_pdf)) {
         $id_mapel_pdf = $mapel_pdf['id_mapel'];
@@ -297,99 +362,94 @@ if ($semua_mapel_query_pdf) {
         $katrol = 0;
         $deskripsi = '-';
 
-        // Ambil data mutlak dari tabel rapor (Wajib Generate Rapor agar muncul)
         if (isset($nilai_tersimpan_pdf[$id_mapel_pdf])) {
             $asli = $nilai_tersimpan_pdf[$id_mapel_pdf]['asli'];
             $katrol = $nilai_tersimpan_pdf[$id_mapel_pdf]['katrol'];
             $deskripsi = $nilai_tersimpan_pdf[$id_mapel_pdf]['capaian_kompetensi'];
         }
 
-        // Penentuan Nilai Final: Pilih yang tertinggi
         $nilai_final = $asli;
         if ($katrol > $asli) {
             $nilai_final = $katrol;
         }
 
-        $daftar_mapel_rapor_pdf[] = [
-            'nama_mapel' => $mapel_pdf['nama_mapel'], 
-            'nilai_akhir' => ($nilai_final > 0) ? $nilai_final : '-', 
-            'capaian_kompetensi' => $deskripsi
-        ];
+        $mapel_pdf['nilai_akhir'] = ($nilai_final > 0) ? $nilai_final : '-';
+        $mapel_pdf['capaian_kompetensi'] = $deskripsi;
+
+        $semua_mapel_raw[$id_mapel_pdf] = $mapel_pdf;
     }
 }
 
 // =======================================================================
-// 7. LOGIKA PENGGABUNGAN MATA PELAJARAN (SENI & PRAKARYA)
+// 7. LOGIKA PENGGABUNGAN MATA PELAJARAN DINAMIS & PEMISAHAN LAMPIRAN
 // =======================================================================
-$seni_mapel_names = ['Seni Musik', 'Seni Rupa', 'Seni Tari', 'Seni Teater']; 
-$prakarya_mapel_names = ['Prakarya']; 
+$mapel_yang_dihapus = [];
+foreach ($semua_mapel_raw as $id => $mapel) {
+    if (!empty($mapel['parent_mapel_id']) && isset($semua_mapel_raw[$mapel['parent_mapel_id']])) {
+        // Ini adalah anak. Tambahkan ke parent.
+        $pid = $mapel['parent_mapel_id'];
 
-$seni_data = null;
-$prakarya_data = null;
-$found_seni_index = -1;
-$found_prakarya_index = -1;
-
-foreach ($daftar_mapel_rapor_pdf as $index => $mapel) {
-    if (in_array($mapel['nama_mapel'], $seni_mapel_names)) {
-        $seni_data = $mapel;
-        $found_seni_index = $index;
-    } elseif (in_array($mapel['nama_mapel'], $prakarya_mapel_names)) {
-        $prakarya_data = $mapel;
-        $found_prakarya_index = $index;
+        if (!isset($semua_mapel_raw[$pid]['anak_list'])) {
+            $semua_mapel_raw[$pid]['anak_list'] = [];
+        }
+        $semua_mapel_raw[$pid]['anak_list'][] = $mapel;
+        $mapel_yang_dihapus[] = $id;
     }
 }
 
-$combined_data = null;
-$mapel_yang_dihapus_index = [];
-
-if ($seni_data && $prakarya_data) {
-    $nilai_seni = is_numeric($seni_data['nilai_akhir']) ? (int)$seni_data['nilai_akhir'] : 0;
-    $nilai_prakarya = is_numeric($prakarya_data['nilai_akhir']) ? (int)$prakarya_data['nilai_akhir'] : 0;
-    $nilai_rata_rata = '-';
-    
-    if ($nilai_seni > 0 && $nilai_prakarya > 0) {
-        $nilai_rata_rata = round(($nilai_seni + $nilai_prakarya) / 2);
-    } elseif ($nilai_seni > 0) {
-        $nilai_rata_rata = $nilai_seni;
-    } elseif ($nilai_prakarya > 0) {
-        $nilai_rata_rata = $nilai_prakarya;
-    }
-
-    $deskripsi_gabungan = trim($seni_data['capaian_kompetensi']) . "\n" . trim($prakarya_data['capaian_kompetensi']);
-    
-    $combined_data = [
-        'nama_mapel' => 'Seni Rupa',
-        'nilai_akhir' => $nilai_rata_rata,
-        'capaian_kompetensi' => trim($deskripsi_gabungan)
-    ];
-
-} elseif ($seni_data) {
-    $seni_data['nama_mapel'] = 'Seni Rupa';
-    $combined_data = $seni_data;
-} elseif ($prakarya_data) {
-    $prakarya_data['nama_mapel'] = 'Seni Rupa';
-    $combined_data = $prakarya_data;
+// Hapus anak dari root
+foreach ($mapel_yang_dihapus as $id) {
+    unset($semua_mapel_raw[$id]);
 }
 
-if ($combined_data) {
-    if ($found_seni_index !== -1) $mapel_yang_dihapus_index[] = $found_seni_index;
-    if ($found_prakarya_index !== -1) $mapel_yang_dihapus_index[] = $found_prakarya_index;
+$daftar_mapel_utama = [];
+$daftar_mapel_tambahan = [];
 
-    $insert_index = ($found_seni_index !== -1 && $found_prakarya_index !== -1) 
-                    ? min($found_seni_index, $found_prakarya_index) 
-                    : ($found_seni_index !== -1 ? $found_seni_index : $found_prakarya_index);
-    
-    $temp_mapel_list = $daftar_mapel_rapor_pdf;
-    
-    $mapel_yang_dihapus_index = array_unique($mapel_yang_dihapus_index);
-    foreach ($mapel_yang_dihapus_index as $index_to_remove) {
-        unset($temp_mapel_list[$index_to_remove]);
+foreach ($semua_mapel_raw as $id => $mapel) {
+    // Hitung rata-rata jika punya anak
+    if (isset($mapel['anak_list']) && count($mapel['anak_list']) > 0) {
+        $total_nilai = 0;
+        $count_nilai = 0;
+        $deskripsi_gabungan = [];
+
+        if (is_numeric($mapel['nilai_akhir']) && $mapel['nilai_akhir'] > 0) {
+            $total_nilai += $mapel['nilai_akhir'];
+            $count_nilai++;
+            $deskripsi_gabungan[] = trim($mapel['capaian_kompetensi']);
+        }
+
+        foreach ($mapel['anak_list'] as $anak) {
+            if (is_numeric($anak['nilai_akhir']) && $anak['nilai_akhir'] > 0) {
+                $total_nilai += $anak['nilai_akhir'];
+                $count_nilai++;
+            }
+            if (trim($anak['capaian_kompetensi']) != '-' && trim($anak['capaian_kompetensi']) != '') {
+                $deskripsi_gabungan[] = trim($anak['capaian_kompetensi']);
+            }
+        }
+
+        if ($count_nilai > 0) {
+            $mapel['nilai_akhir'] = round($total_nilai / $count_nilai);
+        } else {
+            $mapel['nilai_akhir'] = '-';
+        }
+
+        if (count($deskripsi_gabungan) > 0) {
+            $mapel['capaian_kompetensi'] = implode("\n", $deskripsi_gabungan);
+        } else {
+            $mapel['capaian_kompetensi'] = '-';
+        }
     }
-
-    $insert_index = is_int($insert_index) && $insert_index >= 0 ? $insert_index : 0;
-    array_splice($temp_mapel_list, $insert_index, 0, [$combined_data]);
-    $daftar_mapel_rapor_pdf = array_values($temp_mapel_list);
+    
+    // Pisahkan Utama dan Lampiran (Tambahan)
+    if ($mapel['is_tambahan'] == '1') {
+        $daftar_mapel_tambahan[] = $mapel;
+    } else {
+        $daftar_mapel_utama[] = $mapel;
+    }
 }
+
+$daftar_mapel_rapor_pdf = $daftar_mapel_utama;
 
 
 // =======================================================================
@@ -567,21 +627,26 @@ ob_start();
             <?php else: ?>
                 <table class="header-table">
                     <tr>
-                        <td class="logo-left">
-                            <?php if (!empty($base64_kab_pdf)) echo '<img src="' . $base64_kab_pdf . '" alt="Logo Kabupaten" style="width: 80px;">'; ?>
+                        <?php if ($kop_logo_kiri_tampil == '1'): ?>
+                        <td class="logo-left" style="width: 90px;">
+                            <?php if (!empty($base64_kiri_pdf)) echo '<img src="' . $base64_kiri_pdf . '" alt="Logo Kiri" style="width: 80px;">'; ?>
                         </td>
+                        <?php endif; ?>
+
                         <td class="kop-text">
-                            <h4>PEMERINTAH KABUPATEN <?php echo strtoupper(htmlspecialchars($sekolah_pdf['kabupaten_kota'] ?? '')); ?></h4>
-                            <p class="dinas-text">DINAS PENDIDIKAN</p>
-                            <h3 class="school-name"><?php echo strtoupper(htmlspecialchars($sekolah_pdf['nama_sekolah'])); ?></h3>
+                            <h4><?php echo htmlspecialchars($kop_baris_1); ?></h4>
+                            <p class="dinas-text"><?php echo htmlspecialchars($kop_baris_2); ?></p>
+                            <h3 class="school-name"><?php echo htmlspecialchars($kop_baris_3); ?></h3>
                             <p class="school-info">
-                                <?php echo htmlspecialchars($sekolah_pdf['jalan'] ?? ''); ?>, Desa/Kel. <?php echo htmlspecialchars($sekolah_pdf['desa_kelurahan'] ?? ''); ?>, Kec. <?php echo htmlspecialchars($sekolah_pdf['kecamatan'] ?? ''); ?><br>
-                                Telp: <?php echo htmlspecialchars($sekolah_pdf['telepon'] ?? '-'); ?> Email: <?php echo htmlspecialchars($sekolah_pdf['email'] ?? '-'); ?>
+                                <?php echo nl2br(htmlspecialchars(str_replace('<br>', "\n", $kop_baris_4))); ?>
                             </p>
                         </td>
-                        <td class="logo-right">
+
+                        <?php if ($kop_logo_kanan_tampil == '1'): ?>
+                        <td class="logo-right" style="width: 90px;">
                             <?php if (!empty($base64_sekolah_pdf)) echo '<img src="' . $base64_sekolah_pdf . '" alt="Logo Sekolah" style="width: 80px;">'; ?>
                         </td>
+                        <?php endif; ?>
                     </tr>
                 </table>
             <?php endif; ?>
@@ -640,9 +705,9 @@ ob_start();
                 <td><?php echo htmlspecialchars($tahun_ajaran_pdf); ?></td>
             </tr>
         </table>
-        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
+        <hr style="border: none; border-top: 1px solid #000; margin: 10px 0;">
 
-        <div class="section-title">A. NILAI AKADEMIK</div>
+        <div class="section-title" style="margin-top: 15px;">A. NILAI AKADEMIK</div>
         <table class="content-table">
             <thead>
                 <tr>
@@ -841,9 +906,29 @@ ob_start();
                             $keterangan = $rapor_pdf['keterangan_keputusan'] ?? '';
                             $nama_kelas = $siswa_pdf['nama_kelas'] ?? '';
 
-                            // Deteksi otomatis Kelas 9 (Kelulusan) vs Kelas 7 & 8 (Kenaikan)
-                            // Akan mendeteksi format kelas "IX", "IX-A", "9", "9A"
-                            if (strpos(strtoupper($nama_kelas), 'IX') !== false || strpos(strtoupper($nama_kelas), '9') !== false) {
+                            // Deteksi otomatis Kelas Akhir berdasarkan Jenjang
+                            $jenjang = strtoupper($sekolah_pdf['jenjang'] ?? 'SMP');
+                            $is_kelas_akhir = false;
+                            $nama_kelas_upper = strtoupper($nama_kelas);
+
+                            if ($jenjang == 'SD' || $jenjang == 'MI') {
+                                // Cari 'VI' tapi pastikan bukan 'VII' (7) atau 'VIII' (8)
+                                // Atau angka '6'
+                                if ((strpos($nama_kelas_upper, 'VI') !== false && strpos($nama_kelas_upper, 'VII') === false && strpos($nama_kelas_upper, 'VIII') === false) || strpos($nama_kelas_upper, '6') !== false) {
+                                    $is_kelas_akhir = true;
+                                }
+                            } elseif ($jenjang == 'SMA' || $jenjang == 'SMK' || $jenjang == 'MA') {
+                                if (strpos($nama_kelas_upper, 'XII') !== false || strpos($nama_kelas_upper, '12') !== false) {
+                                    $is_kelas_akhir = true;
+                                }
+                            } else {
+                                // Default SMP / MTs
+                                if (strpos($nama_kelas_upper, 'IX') !== false || strpos($nama_kelas_upper, '9') !== false) {
+                                    $is_kelas_akhir = true;
+                                }
+                            }
+
+                            if ($is_kelas_akhir) {
                                 if ($keputusan == 'Lulus') {
                                     echo "LULUS DARI SATUAN PENDIDIKAN";
                                 } elseif ($keputusan == 'Tidak Lulus') {
@@ -898,6 +983,98 @@ ob_start();
                 </tr>
             </table>
         </div>
+        <?php if (!empty($daftar_mapel_tambahan)): ?>
+        <div style="page-break-before: always;"></div>
+
+        <table class="info-table">
+            <tr>
+                <td width="20%">Nama Murid</td>
+                <td width="1%">:</td>
+                <td width="34%"><b><?php echo htmlspecialchars($siswa_pdf['nama_lengkap'] ?? ''); ?></b></td>
+                <td width="20%">Kelas</td>
+                <td width="1%">:</td>
+                <td width="24%"><?php echo htmlspecialchars($siswa_pdf['nama_kelas'] ?? ''); ?></td>
+            </tr>
+            <tr>
+                <td>NISN / NIS</td>
+                <td>:</td>
+                <td><?php echo htmlspecialchars($siswa_pdf['nisn'] ?? ''); ?> / <?php echo htmlspecialchars($siswa_pdf['nis'] ?? ''); ?></td>
+                <td>Fase</td>
+                <td>:</td>
+                <td><?php echo htmlspecialchars($siswa_pdf['fase'] ?? ''); ?></td>
+            </tr>
+            <tr>
+                <td>Sekolah</td>
+                <td>:</td>
+                <td><?php echo htmlspecialchars($sekolah_pdf['nama_sekolah'] ?? ''); ?></td>
+                <td>Semester</td>
+                <td>:</td>
+                <td><?php echo $semester_text_pdf; ?></td>
+            </tr>
+            <tr>
+                <td>Alamat Sekolah</td>
+                <td>:</td>
+                <td><?php echo htmlspecialchars($sekolah_pdf['jalan'] ?? ''); ?>, <?php echo htmlspecialchars($sekolah_pdf['desa_kelurahan'] ?? ''); ?></td>
+                <td>Tahun Ajaran</td>
+                <td>:</td>
+                <td><?php echo htmlspecialchars($tahun_ajaran_pdf); ?></td>
+            </tr>
+        </table>
+        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
+
+        <div class="section-title text-center" style="text-align: center;">LAMPIRAN: NILAI MATA PELAJARAN TAMBAHAN</div>
+        <table class="content-table">
+            <thead>
+                <tr>
+                    <th width="5%">No.</th>
+                    <th width="<?php echo $show_nilai_column_pdf ? '25%' : '33%'; ?>">Mata Pelajaran</th>
+                    <?php if ($show_nilai_column_pdf): ?>
+                        <th width="8%">Nilai Akhir</th>
+                    <?php endif; ?>
+                    <th>Capaian Kompetensi</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                $no_pdf = 1;
+                foreach ($daftar_mapel_tambahan as $d_pdf):
+                ?>
+                <tr>
+                    <td class="text-center"><?php echo $no_pdf++; ?></td>
+                    <td><?php echo htmlspecialchars($d_pdf['nama_mapel'] ?? '-'); ?></td>
+                    <?php if ($show_nilai_column_pdf): ?>
+                        <td class="nilai-cetak"><?php echo $d_pdf['nilai_akhir'] ?? '-'; ?></td>
+                    <?php endif; ?>
+                    <td class="capaian"><?php echo !empty($d_pdf['capaian_kompetensi']) ? nl2br(htmlspecialchars($d_pdf['capaian_kompetensi'] ?? '-')) : '-'; ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <table class="signature-table" style="width: 100%; margin-top: 50px;">
+            <tr>
+                <td style="width: 50%; text-align: center;">
+                    Mengetahui,<br>
+                    Kepala Sekolah
+                    <div class="signature-space"></div>
+                    <strong><u><?php echo htmlspecialchars($sekolah_pdf['nama_kepsek'] ?? ''); ?></u></strong><br>
+                    <?php if (!empty(trim($sekolah_pdf['jabatan_kepsek'] ?? ''))): ?>
+                        <span style="font-size: 9pt;"><?php echo htmlspecialchars($sekolah_pdf['jabatan_kepsek']); ?></span><br>
+                    <?php endif; ?>
+                    <?php if (!empty(trim($sekolah_pdf['nip_kepsek'] ?? ''))): ?>
+                        NIP. <?php echo htmlspecialchars($sekolah_pdf['nip_kepsek']); ?>
+                    <?php endif; ?>
+                </td>
+                <td style="width: 50%; text-align: center;">
+                    <?php echo htmlspecialchars($sekolah_pdf['kabupaten_kota'] ?? ''); ?>, <?php echo $tanggal_rapor_pdf; ?><br>
+                    Wali Kelas
+                    <div class="signature-space"></div>
+                    <strong><u><?php echo htmlspecialchars($siswa_pdf['nama_walikelas'] ?? ''); ?></u></strong><br>
+                    NIP. <?php echo htmlspecialchars($siswa_pdf['nip_walikelas'] ?? ''); ?>
+                </td>
+            </tr>
+        </table>
+        <?php endif; ?>
     </main>
 
 </body>

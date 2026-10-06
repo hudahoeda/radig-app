@@ -67,10 +67,30 @@ elseif ($aksi == 'tambah') {
     }
     mysqli_stmt_close($cek_query);
 
+    $parent_mapel_id = isset($_POST['parent_mapel_id']) && $_POST['parent_mapel_id'] !== '' ? (int)$_POST['parent_mapel_id'] : null;
+    $is_tambahan = isset($_POST['is_tambahan']) ? 1 : 0;
+
+    // [MODIFIKASI] Cegah Maksimal Kedalaman (Depth = 1)
+    if ($parent_mapel_id !== null) {
+        // Cek apakah parent yang dipilih juga sudah memiliki parent (Depth > 1)
+        $q_cek_parent = mysqli_prepare($koneksi, "SELECT parent_mapel_id FROM mata_pelajaran WHERE id_mapel = ?");
+        mysqli_stmt_bind_param($q_cek_parent, "i", $parent_mapel_id);
+        mysqli_stmt_execute($q_cek_parent);
+        $res_parent = mysqli_stmt_get_result($q_cek_parent);
+        $row_parent = mysqli_fetch_assoc($res_parent);
+
+        if ($row_parent && $row_parent['parent_mapel_id'] !== null) {
+            $_SESSION['pesan_error'] = "Gagal! Mapel induk yang dipilih sudah tergabung ke mapel lain. Penggabungan bertingkat tidak diizinkan.";
+            header("Location: mapel_tambah.php");
+            exit();
+        }
+    }
+
     // 3. Masukkan data baru (set urutan ke 99 sesuai default di SQL)
-    // [MODIFIKASI] Insert juga kolom kelompok
-    $query = mysqli_prepare($koneksi, "INSERT INTO mata_pelajaran (kode_mapel, nama_mapel, kelompok, urutan) VALUES (?, ?, ?, 99)");
-    mysqli_stmt_bind_param($query, "sss", $kode_mapel, $nama_mapel, $kelompok);
+    // [MODIFIKASI] Insert juga kolom kelompok, parent_mapel_id, is_tambahan, agama_khusus
+    $agama_khusus = isset($_POST['agama_khusus']) && $_POST['agama_khusus'] !== '' ? $_POST['agama_khusus'] : null;
+    $query = mysqli_prepare($koneksi, "INSERT INTO mata_pelajaran (kode_mapel, nama_mapel, kelompok, urutan, parent_mapel_id, is_tambahan, agama_khusus) VALUES (?, ?, ?, 99, ?, ?, ?)");
+    mysqli_stmt_bind_param($query, "sssiis", $kode_mapel, $nama_mapel, $kelompok, $parent_mapel_id, $is_tambahan, $agama_khusus);
     
     if (mysqli_stmt_execute($query)) {
         $_SESSION['pesan'] = "Mata pelajaran baru berhasil ditambahkan.";
@@ -109,9 +129,36 @@ elseif ($aksi == 'update') {
     }
     mysqli_stmt_close($cek_query);
 
-    // [MODIFIKASI] Update juga kolom kelompok
-    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET kode_mapel = ?, nama_mapel = ?, kelompok = ? WHERE id_mapel = ?");
-    mysqli_stmt_bind_param($query, "sssi", $kode_mapel, $nama_mapel, $kelompok, $id_mapel);
+    $parent_mapel_id = isset($_POST['parent_mapel_id']) && $_POST['parent_mapel_id'] !== '' ? (int)$_POST['parent_mapel_id'] : null;
+    $is_tambahan = isset($_POST['is_tambahan']) ? 1 : 0;
+
+    // [MODIFIKASI] Cegah Loop Tak Terbatas & Maksimal Kedalaman (Depth = 1)
+    if ($parent_mapel_id !== null) {
+        // Cek agar mapel tidak di set sebagai parent untuk dirinya sendiri
+        if ($parent_mapel_id === $id_mapel) {
+            $_SESSION['pesan_error'] = "Gagal! Mapel tidak bisa digabung ke dirinya sendiri.";
+            header("Location: mapel_edit.php?id=" . $id_mapel);
+            exit();
+        }
+
+        // Cek apakah parent yang dipilih juga sudah memiliki parent (Depth > 1)
+        $q_cek_parent = mysqli_prepare($koneksi, "SELECT parent_mapel_id FROM mata_pelajaran WHERE id_mapel = ?");
+        mysqli_stmt_bind_param($q_cek_parent, "i", $parent_mapel_id);
+        mysqli_stmt_execute($q_cek_parent);
+        $res_parent = mysqli_stmt_get_result($q_cek_parent);
+        $row_parent = mysqli_fetch_assoc($res_parent);
+
+        if ($row_parent && $row_parent['parent_mapel_id'] !== null) {
+            $_SESSION['pesan_error'] = "Gagal! Mapel induk yang dipilih sudah tergabung ke mapel lain. Penggabungan bertingkat tidak diizinkan.";
+            header("Location: mapel_edit.php?id=" . $id_mapel);
+            exit();
+        }
+    }
+
+    // [MODIFIKASI] Update juga kolom kelompok, parent_mapel_id, is_tambahan, agama_khusus
+    $agama_khusus = isset($_POST['agama_khusus']) && $_POST['agama_khusus'] !== '' ? $_POST['agama_khusus'] : null;
+    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET kode_mapel = ?, nama_mapel = ?, kelompok = ?, parent_mapel_id = ?, is_tambahan = ?, agama_khusus = ? WHERE id_mapel = ?");
+    mysqli_stmt_bind_param($query, "sssiisi", $kode_mapel, $nama_mapel, $kelompok, $parent_mapel_id, $is_tambahan, $agama_khusus, $id_mapel);
     
     if (mysqli_stmt_execute($query)) {
         $_SESSION['pesan'] = "Data mata pelajaran berhasil diperbarui.";
@@ -139,6 +186,70 @@ elseif ($aksi == 'set_kelompok') {
             $_SESSION['pesan_error'] = "Gagal mengubah kelompok mapel.";
         }
         mysqli_stmt_close($query);
+    }
+    header("Location: mapel_tampil.php");
+    exit();
+}
+
+// --- 4.1 LOGIKA SET LAMPIRAN ---
+elseif ($aksi == 'set_lampiran') {
+    $id_mapel = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    $status = isset($_GET['status']) ? (int)$_GET['status'] : 0;
+
+    if ($id_mapel > 0) {
+        $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET is_tambahan = ? WHERE id_mapel = ?");
+        mysqli_stmt_bind_param($query, "ii", $status, $id_mapel);
+        if (mysqli_stmt_execute($query)) {
+            $_SESSION['pesan'] = $status ? "Mata pelajaran diatur sebagai Lampiran." : "Mata pelajaran dikembalikan menjadi Mapel Utama.";
+        } else {
+            $_SESSION['pesan_error'] = "Gagal mengubah status lampiran.";
+        }
+        mysqli_stmt_close($query);
+    }
+    header("Location: mapel_tampil.php");
+    exit();
+}
+
+// --- 4.2 LOGIKA SET PARENT (GABUNG INDUK) ---
+elseif ($aksi == 'set_parent') {
+    $id_mapel = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    $parent = (isset($_GET['parent']) && $_GET['parent'] !== '') ? (int)$_GET['parent'] : null;
+
+    if ($id_mapel > 0) {
+        if ($parent !== null && $parent == $id_mapel) {
+            $_SESSION['pesan_error'] = "Gagal! Tidak bisa digabung ke dirinya sendiri.";
+        } else {
+            // Cek kedalaman (mencegah nested parent)
+            $boleh = true;
+            if ($parent !== null) {
+                $q = mysqli_prepare($koneksi, "SELECT parent_mapel_id FROM mata_pelajaran WHERE id_mapel = ?");
+                mysqli_stmt_bind_param($q, "i", $parent);
+                mysqli_stmt_execute($q);
+                $res = mysqli_fetch_assoc(mysqli_stmt_get_result($q));
+                if ($res && $res['parent_mapel_id'] !== null) {
+                    $boleh = false;
+                    $_SESSION['pesan_error'] = "Gagal! Penggabungan bertingkat tidak diizinkan.";
+                }
+                mysqli_stmt_close($q);
+            }
+
+            if ($boleh) {
+                if ($parent === null || $parent === 0) {
+                    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET parent_mapel_id = NULL WHERE id_mapel = ?");
+                    mysqli_stmt_bind_param($query, "i", $id_mapel);
+                } else {
+                    $query = mysqli_prepare($koneksi, "UPDATE mata_pelajaran SET parent_mapel_id = ? WHERE id_mapel = ?");
+                    mysqli_stmt_bind_param($query, "ii", $parent, $id_mapel);
+                }
+
+                if (mysqli_stmt_execute($query)) {
+                    $_SESSION['pesan'] = "Status gabung mapel induk berhasil diperbarui.";
+                } else {
+                    $_SESSION['pesan_error'] = "Gagal memperbarui mapel induk.";
+                }
+                mysqli_stmt_close($query);
+            }
+        }
     }
     header("Location: mapel_tampil.php");
     exit();

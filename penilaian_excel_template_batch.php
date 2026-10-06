@@ -34,7 +34,7 @@ $nama_kelas = $info['nama_kelas'] ?? 'N/A';
 $nama_mapel = $info['nama_mapel'] ?? 'N/A';
 
 // 1. Ambil daftar siswa
-$q_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif' ORDER BY nama_lengkap ASC");
+$q_siswa = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas) ORDER BY s.nama_lengkap ASC");
 $daftar_siswa = [];
 while ($s = mysqli_fetch_assoc($q_siswa)) {
     $daftar_siswa[] = $s;

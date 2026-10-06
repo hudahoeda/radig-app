@@ -3,10 +3,19 @@
 // --- AMBIL NAMA SEKOLAH DARI DATABASE ---
 $nama_sekolah_footer = 'Aplikasi Rapor Digital Anda'; // Default name
 if (isset($koneksi)) { // Check if $koneksi is available
-    $query_sekolah_footer = mysqli_query($koneksi, "SELECT nama_sekolah FROM sekolah WHERE id_sekolah = 1 LIMIT 1");
+    $query_sekolah_footer = mysqli_query($koneksi, "SELECT nama_sekolah FROM sekolah LIMIT 1");
     if ($query_sekolah_footer && mysqli_num_rows($query_sekolah_footer) > 0) {
         $data_sekolah_footer = mysqli_fetch_assoc($query_sekolah_footer);
         $nama_sekolah_footer = $data_sekolah_footer['nama_sekolah'];
+    }
+}
+
+// --- OVERRIDE VERSI SECARA DINAMIS DARI OTA ---
+$local_version_file = __DIR__ . '/local_version.json';
+if (file_exists($local_version_file)) {
+    $lv_data = json_decode(file_get_contents($local_version_file), true);
+    if ($lv_data && isset($lv_data['version'])) {
+        $APP_VERSION = $lv_data['version'];
     }
 }
 ?>
@@ -174,40 +183,79 @@ $(document).ready(function () {
 </script>
 
 <?php
-// --- LOGIKA NOTIFIKASI SWEETALERT (TETAP SAMA) ---
+// --- LOGIKA NOTIFIKASI SWEETALERT ---
 if (isset($_SESSION['pesan'])) {
+    $pesan_raw = $_SESSION['pesan'];
+    $is_json = (strpos(trim($pesan_raw), '{') === 0);
+    $is_legacy = (strpos(trim($pesan_raw), "'") === 0 || strpos(trim($pesan_raw), '"') === 0);
+
     echo "<script>
-        if (typeof Swal !== 'undefined') {
-            document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Swal !== 'undefined') {
                 try {
-                    let config = " . $_SESSION['pesan'] . ";
-                    // Pastikan timer ada agar tidak menggantung selamanya jika user diam
-                    if(!config.timer) config.timer = 3000; 
-                    if(!config.timerProgressBar) config.timerProgressBar = true;
-                    
+";
+    if ($is_json) {
+        echo "
+                    let config = " . $pesan_raw . ";
+                    if (!config.timer) config.timer = 3000;
+                    if (!config.timerProgressBar) config.timerProgressBar = true;
                     Swal.fire(config);
+        ";
+    } else if ($is_legacy) {
+        echo "
+                    Swal.fire(" . $pesan_raw . ");
+        ";
+    } else {
+        echo "
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Pemberitahuan',
+                        text: '" . addslashes($pesan_raw) . "',
+                        timer: 3000,
+                        timerProgressBar: true
+                    });
+        ";
+    }
+    echo "
                 } catch (e) {
-                    console.error('Error parsing SweetAlert config:', e);
+                    console.error('Error rendering SweetAlert:', e);
                 }
-            });
-        }
+            }
+        });
     </script>";
     unset($_SESSION['pesan']);
 }
+
 if (isset($_SESSION['pesan_error'])) {
-     echo "<script>
-        if (typeof Swal !== 'undefined') {
-             document.addEventListener('DOMContentLoaded', function() {
-                 try {
-                     let config = " . $_SESSION['pesan_error'] . ";
-                     Swal.fire(config);
-                 } catch (e) {
-                     console.error('Error parsing SweetAlert error config:', e);
-                     Swal.fire({ icon: 'error', title: 'Gagal!', text: 'Terjadi kesalahan sistem.' });
-                 }
-             });
-         }
-     </script>";
+    $pesan_raw = $_SESSION['pesan_error'];
+    $is_json = (strpos(trim($pesan_raw), '{') === 0);
+
+    echo "<script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Swal !== 'undefined') {
+                try {
+";
+    if ($is_json) {
+        echo "
+                    let config = " . $pesan_raw . ";
+                    Swal.fire(config);
+        ";
+    } else {
+        echo "
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Gagal!',
+                        text: '" . addslashes($pesan_raw) . "'
+                    });
+        ";
+    }
+    echo "
+                } catch (e) {
+                    console.error('Error rendering SweetAlert error:', e);
+                }
+            }
+        });
+    </script>";
     unset($_SESSION['pesan_error']);
 }
 ?>

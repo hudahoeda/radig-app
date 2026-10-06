@@ -87,12 +87,12 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'get_nilai_mapel') 
     $relevant_agama_ajax = get_relevant_agama($nama_mapel_ajax);
     
     // Filter Siswa
-    $siswa_where_clause = "id_kelas = $id_kelas_final AND status_siswa = 'Aktif'";
+    $siswa_where_clause = "(s.id_kelas = $id_kelas_final OR r.id_kelas = $id_kelas_final)";
     if ($relevant_agama_ajax) {
-        $siswa_where_clause .= " AND agama = '$relevant_agama_ajax'";
+        $siswa_where_clause .= " AND s.agama = '$relevant_agama_ajax'";
     }
 
-    $q_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap, nisn FROM siswa WHERE $siswa_where_clause ORDER BY nama_lengkap ASC");
+    $q_siswa = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap, s.nisn FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE $siswa_where_clause ORDER BY s.nama_lengkap ASC");
     
     $result_data = [];
     
@@ -171,7 +171,7 @@ if (!$kelas) {
 }
 
 // Hitung Base Siswa
-$q_siswa_count = mysqli_query($koneksi, "SELECT COUNT(*) as total FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'");
+$q_siswa_count = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as total FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)");
 $total_siswa_kelas = mysqli_fetch_assoc($q_siswa_count)['total'] ?? 0;
 
 // Persiapan Data Monitoring
@@ -196,7 +196,7 @@ if (mysqli_num_rows($result_mapel) > 0) {
         $relevant_siswa_count = $total_siswa_kelas;
         
         if ($relevant_agama) {
-            $q_relevant = mysqli_query($koneksi, "SELECT COUNT(*) as total FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif' AND agama = '$relevant_agama'");
+            $q_relevant = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as total FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas) AND s.agama = '$relevant_agama'");
             $relevant_siswa_count = mysqli_fetch_assoc($q_relevant)['total'] ?? 0;
         }
 

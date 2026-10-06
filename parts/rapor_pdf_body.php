@@ -234,7 +234,7 @@ if ($seni_data && $prakarya_data) {
     $avg = ($n1 > 0 && $n2 > 0) ? round(($n1 + $n2) / 2) : max($n1, $n2);
     
     $merged_desc = trim($seni_data['capaian_kompetensi']) . "\n" . trim($prakarya_data['capaian_kompetensi']);
-    
+
     $daftar_mapel_rapor[$seni_idx] = [
         'nama_mapel' => 'Seni Rupa',
         'nilai_akhir' => ($avg > 0 ? $avg : '-'),

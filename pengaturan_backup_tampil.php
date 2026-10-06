@@ -151,6 +151,14 @@ $backup_dir = 'backups/';
 if (!is_dir($backup_dir)) mkdir($backup_dir, 0755, true);
 $backup_files = glob($backup_dir . '*.sql');
 rsort($backup_files);
+
+// [MODIFIKASI] Baca versi aplikasi saat ini
+$file_version = __DIR__ . '/local_version.json';
+$app_version_name = 'v1.0';
+if (file_exists($file_version)) {
+    $j = json_decode(file_get_contents($file_version), true);
+    if($j && isset($j['version'])) $app_version_name = $j['version'];
+}
 ?>
 
 <!-- =================================================================================
@@ -266,6 +274,39 @@ rsort($backup_files);
                 <a href="pengaturan_tampil.php" class="btn btn-light rounded-pill px-4 fw-bold shadow-sm">
                     <i class="bi bi-arrow-left me-2"></i>KEMBALI KE PENGATURAN
                 </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTA UPDATER SECTION -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden;">
+                <div class="card-body p-4 p-md-5 d-flex flex-column flex-md-row align-items-center justify-content-between position-relative">
+                    <div style="z-index: 2;" class="text-white mb-4 mb-md-0">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-rocket-takeoff-fill fs-2 me-3 text-warning"></i>
+                            <h3 class="fw-bolder mb-0">Sistem Pembaruan Otomatis (OTA)</h3>
+                        </div>
+                        <p class="mb-2 opacity-75">Periksa versi terbaru, unduh, dan pasang secara otomatis tanpa repot.</p>
+                        <div class="d-flex align-items-center gap-3 mt-3">
+                            <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-3 py-2 rounded-pill fs-6 fw-normal">
+                                Versi Saat Ini: <b id="lbl_current_ver"><?php echo htmlspecialchars($app_version_name); ?></b>
+                            </span>
+                            <span id="badge_status" class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-3 py-2 rounded-pill fs-6 fw-normal">
+                                <i class="bi bi-dash-circle me-1"></i> Belum Dicek
+                            </span>
+                        </div>
+                    </div>
+                    <div style="z-index: 2;">
+                        <button id="btn_cek_update" class="btn btn-warning btn-lg fw-bolder rounded-pill px-4 shadow">
+                            <i class="bi bi-arrow-repeat me-2"></i>CEK PEMBARUAN
+                        </button>
+                    </div>
+
+                    <!-- Dekorasi Background -->
+                    <i class="bi bi-cloud-download position-absolute opacity-10" style="font-size: 15rem; right: -20px; top: -50px; color: #3b82f6;"></i>
+                </div>
             </div>
         </div>
     </div>
@@ -476,6 +517,90 @@ function hapusBackup(file) {
         confirmButtonColor: '#ef4444',
         confirmButtonText: 'HAPUS'
     }).then((result) => { if(result.isConfirmed) window.location.href = 'pengaturan_aksi.php?aksi=hapus_backup&file=' + file; });
+}
+
+// 4. Skrip OTA Auto-Updater
+document.getElementById('btn_cek_update').addEventListener('click', function() {
+    let btn = this;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>MENGECEK...';
+    btn.disabled = true;
+
+    fetch('pengaturan_updater_aksi.php?action=check')
+    .then(r => r.json())
+    .then(res => {
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>CEK PEMBARUAN';
+        btn.disabled = false;
+
+        let badgeStatus = document.getElementById('badge_status');
+
+        if(res.status == 'update_available' && res.managed_deployment) {
+            Swal.fire('Pembaruan Tersedia', 'Versi ' + res.new_version + ' tersedia. Server ini dikelola melalui Coolify; pasang pembaruan melalui repository dan redeploy.', 'info');
+        } else if(res.status == 'update_available') {
+            badgeStatus.className = 'badge bg-danger bg-opacity-25 text-danger border border-danger px-3 py-2 rounded-pill fs-6 fw-normal';
+            badgeStatus.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i> Update v' + res.new_version + ' Tersedia';
+
+            Swal.fire({
+                title: '🎉 Update Baru Tersedia!',
+                html: "<div class='text-start mb-3'><b>Versi Baru:</b> " + res.new_version + "<br><b>Changelog:</b><br><div class='p-2 bg-light border rounded mt-2' style='max-height: 150px; overflow-y: auto;'>" + res.changelog + "</div></div><div class='alert alert-warning text-start small mb-0'><i class='bi bi-info-circle me-1'></i> Sistem akan mengunduh dan memasang update secara otomatis. Jangan tutup halaman ini selama proses berlangsung.</div>",
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-cloud-arrow-down-fill me-1"></i> UPDATE & INSTALL SEKARANG',
+                cancelButtonText: 'Nanti Saja',
+                confirmButtonColor: '#3b82f6'
+            }).then((result) => {
+                if(result.isConfirmed) {
+                    mulaiInstallUpdate(res.download_url);
+                }
+            });
+        } else if(res.status == 'up_to_date') {
+            badgeStatus.className = 'badge bg-success bg-opacity-25 text-success border border-success px-3 py-2 rounded-pill fs-6 fw-normal';
+            badgeStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Sudah Versi Terbaru';
+            Swal.fire('Up to date!', 'Aplikasi Anda sudah menggunakan versi paling baru (' + res.current_version + ').', 'success');
+        } else {
+            Swal.fire('Error', res.message || 'Gagal mengecek pembaruan', 'error');
+        }
+    })
+    .catch(e => {
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>CEK PEMBARUAN';
+        btn.disabled = false;
+        Swal.fire('Koneksi Gagal', 'Gagal terhubung ke server pembaruan pusat. Periksa koneksi internet Anda.', 'error');
+    });
+});
+
+function mulaiInstallUpdate(url) {
+    Swal.fire({
+        title: 'Mengunduh & Memasang...',
+        html: 'Mohon tunggu, proses ini mungkin memakan waktu 1-2 menit.<br><b class="text-danger mt-2 d-block">JANGAN TUTUP HALAMAN INI!</b>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+            Swal.showLoading();
+            let formData = new FormData();
+            formData.append('download_url', url);
+
+            fetch('pengaturan_updater_aksi.php?action=install', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(res => {
+                if(res.status == 'success') {
+                    Swal.fire({
+                        title: 'Update Sukses!',
+                        text: res.message,
+                        icon: 'success'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire('Gagal!', res.message, 'error');
+                }
+            })
+            .catch(e => {
+                Swal.fire('Error Sistem', 'Terjadi kesalahan sistem saat memasang update.', 'error');
+            });
+        }
+    });
 }
 </script>
 

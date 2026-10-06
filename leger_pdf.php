@@ -85,8 +85,14 @@ $kkm = mysqli_fetch_assoc($q_kkm)['nilai_pengaturan'] ?? 75;
 $q_smt = mysqli_query($koneksi, "SELECT nilai_pengaturan FROM pengaturan WHERE nama_pengaturan = 'semester_aktif' LIMIT 1");
 $semester_aktif = mysqli_fetch_assoc($q_smt)['nilai_pengaturan'] ?? 1;
 
-// Data Siswa (Hanya Aktif)
-$result_siswa = mysqli_query($koneksi, "SELECT id_siswa, nis, nama_lengkap FROM siswa WHERE id_kelas=$id_kelas AND status_siswa='Aktif' ORDER BY nama_lengkap ASC");
+// Data Siswa (Hanya Aktif atau memiliki Riwayat Rapor di kelas ini)
+$result_siswa = mysqli_query($koneksi, "
+    SELECT DISTINCT s.id_siswa, s.nis, s.nama_lengkap
+    FROM siswa s
+    LEFT JOIN rapor r ON s.id_siswa = r.id_siswa
+    WHERE (s.id_kelas=$id_kelas) OR (r.id_kelas = $id_kelas AND r.id_tahun_ajaran = $id_tahun_ajaran_aktif)
+    ORDER BY s.nama_lengkap ASC
+");
 $daftar_siswa = [];
 while ($row_s = mysqli_fetch_assoc($result_siswa)) {
     $daftar_siswa[] = $row_s;
@@ -495,15 +501,21 @@ ob_start();
                 Mengetahui,<br>Kepala Sekolah
                 <div class="signature-space"></div>
                 <strong><u><?php echo htmlspecialchars($sekolah['nama_kepsek'] ?? ''); ?></u></strong><br>
-                <span style="font-size: 8pt;"><?php echo htmlspecialchars($sekolah['jabatan_kepsek'] ?? ''); ?></span><br>
-                NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek'] ?? '-'); ?>
+                <?php if (!empty(trim($sekolah['jabatan_kepsek'] ?? ''))): ?>
+                    <span style="font-size: 8pt;"><?php echo htmlspecialchars($sekolah['jabatan_kepsek']); ?></span><br>
+                <?php endif; ?>
+                <?php if (!empty(trim($sekolah['nip_kepsek'] ?? '')) && trim($sekolah['nip_kepsek']) !== '-'): ?>
+                    NIP. <?php echo htmlspecialchars($sekolah['nip_kepsek']); ?>
+                <?php endif; ?>
             </td>
             <td></td>
             <td>
                 <?php echo $lokasi_tanggal; ?><br>Wali Kelas
                 <div class="signature-space"></div>
                 <strong><u><?php echo htmlspecialchars($walikelas['nama_guru']); ?></u></strong><br>
-                NIP. <?php echo htmlspecialchars($walikelas['nip']); ?>
+                <?php if (!empty(trim($walikelas['nip'] ?? '')) && trim($walikelas['nip']) !== '-'): ?>
+                    NIP. <?php echo htmlspecialchars($walikelas['nip']); ?>
+                <?php endif; ?>
             </td>
         </tr>
     </table>

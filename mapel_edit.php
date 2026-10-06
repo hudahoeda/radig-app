@@ -18,11 +18,14 @@ if ($id_mapel <= 0) {
 }
 
 // Ambil data mapel yang akan diedit dari database menggunakan prepared statement
-$query = mysqli_prepare($koneksi, "SELECT id_mapel, kode_mapel, nama_mapel FROM mata_pelajaran WHERE id_mapel = ?");
+$query = mysqli_prepare($koneksi, "SELECT id_mapel, kode_mapel, nama_mapel, parent_mapel_id, is_tambahan FROM mata_pelajaran WHERE id_mapel = ?");
 mysqli_stmt_bind_param($query, "i", $id_mapel);
 mysqli_stmt_execute($query);
 $result = mysqli_stmt_get_result($query);
 $data = mysqli_fetch_assoc($result);
+
+// Ambil daftar mapel untuk opsi induk (kecuali dirinya sendiri)
+$mapel_induk_query = mysqli_query($koneksi, "SELECT id_mapel, nama_mapel FROM mata_pelajaran WHERE id_mapel != $id_mapel ORDER BY nama_mapel ASC");
 
 // Jika data tidak ditemukan, kembalikan ke halaman tampil
 if (!$data) {
@@ -88,6 +91,44 @@ if (!$data) {
                         <label for="nama_mapel" class="form-label fw-bold">Nama Mata Pelajaran</label>
                         <input type="text" class="form-control" id="nama_mapel" name="nama_mapel" value="<?php echo htmlspecialchars($data['nama_mapel']); ?>" required>
                         <div class="invalid-feedback">Nama mata pelajaran wajib diisi.</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="parent_mapel_id" class="form-label fw-bold">Gabung ke Mapel Induk (Opsional)</label>
+                        <select class="form-select" id="parent_mapel_id" name="parent_mapel_id">
+                            <option value="">-- Tidak Digabung (Berdiri Sendiri) --</option>
+                            <?php while($m = mysqli_fetch_assoc($mapel_induk_query)): ?>
+                                <option value="<?php echo $m['id_mapel']; ?>" <?php if($data['parent_mapel_id'] == $m['id_mapel']) echo 'selected'; ?>><?php echo htmlspecialchars($m['nama_mapel']); ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                        <div class="form-text">Pilih mapel jika nilai ini ingin dirata-rata ke mapel lain.</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Cetak Sebagai Lampiran?</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="is_tambahan" name="is_tambahan" value="1" <?php if($data['is_tambahan'] == '1') echo 'checked'; ?>>
+                            <label class="form-check-label" for="is_tambahan">Ya, tampilkan di Lembar Lampiran Tambahan</label>
+                        </div>
+                        <div class="form-text">Centang jika mapel ini tambahan dan tidak masuk ke Rapor Dinas Utama.</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label for="agama_khusus" class="form-label fw-bold">Batasi Khusus Agama Tertentu (Opsional)</label>
+                        <select class="form-select" id="agama_khusus" name="agama_khusus">
+                            <?php $ag = isset($data['agama_khusus']) ? $data['agama_khusus'] : ''; ?>
+                            <option value="" <?php if($ag == '') echo 'selected'; ?>>-- Semua Agama (Tanpa Pengecualian) --</option>
+                            <option value="Islam" <?php if($ag == 'Islam') echo 'selected'; ?>>Hanya untuk Siswa Islam</option>
+                            <option value="Kristen" <?php if($ag == 'Kristen') echo 'selected'; ?>>Hanya untuk Siswa Kristen</option>
+                            <option value="Katolik" <?php if($ag == 'Katolik') echo 'selected'; ?>>Hanya untuk Siswa Katolik</option>
+                            <option value="Hindu" <?php if($ag == 'Hindu') echo 'selected'; ?>>Hanya untuk Siswa Hindu</option>
+                            <option value="Buddha" <?php if($ag == 'Buddha') echo 'selected'; ?>>Hanya untuk Siswa Buddha</option>
+                            <option value="Khonghucu" <?php if($ag == 'Khonghucu') echo 'selected'; ?>>Hanya untuk Siswa Khonghucu</option>
+                        </select>
+                        <div class="form-text text-danger"><i class="bi bi-info-circle me-1"></i>Jika diatur, hanya siswa dengan agama yang dipilih yang akan muncul di form input nilai guru dan dicetakkan mapel ini di rapornya.</div>
                     </div>
                 </div>
                 

@@ -28,7 +28,7 @@ if (!$id_kelas) {
 }
 
 // Ambil semua siswa di kelas ini
-$q_siswa = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas");
+$q_siswa = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)");
 
 mysqli_begin_transaction($koneksi);
 try {

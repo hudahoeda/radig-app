@@ -14,6 +14,72 @@ $id_guru = (int)$_SESSION['id_guru'];
 
 switch ($aksi) {
     //======================================================================
+    // AKSI UNTUK MENYALIN TP LAMA (YANG DIPILIH SAJA)
+    //======================================================================
+    case 'copy_tp_selected':
+        $id_ta_sumber = isset($_POST['id_ta_sumber']) ? (int)$_POST['id_ta_sumber'] : 0;
+        $tp_ids = isset($_POST['tp_ids']) ? $_POST['tp_ids'] : [];
+
+        if (empty($tp_ids)) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Kosong', 'text' => 'Tidak ada TP yang dipilih.']);
+            header("Location: tp_guru_tampil.php");
+            exit;
+        }
+
+        // Ambil TA Aktif
+        $q_ta_aktif = mysqli_query($koneksi, "SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status='Aktif' LIMIT 1");
+        $ta_aktif = mysqli_fetch_assoc($q_ta_aktif);
+        if (!$ta_aktif) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Tidak ada Tahun Ajaran Aktif.']);
+            header("Location: tp_guru_tampil.php");
+            exit;
+        }
+        $id_ta_aktif = $ta_aktif['id_tahun_ajaran'];
+
+        if ($id_ta_sumber == $id_ta_aktif) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Sumber tidak boleh sama dengan Tahun Ajaran aktif.']);
+            header("Location: tp_guru_tampil.php");
+            exit;
+        }
+
+        // Escape semua ID TP
+        $id_list = implode(',', array_map('intval', $tp_ids));
+
+        $q_tp_lama = mysqli_query($koneksi, "SELECT id_mapel, fase, kode_tp, deskripsi_tp, semester, kktp FROM tujuan_pembelajaran WHERE id_guru_pembuat = $id_guru AND id_tahun_ajaran = $id_ta_sumber AND id_tp IN ($id_list)");
+
+        if (mysqli_num_rows($q_tp_lama) == 0) {
+            $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Gagal', 'text' => 'TP tidak valid.']);
+            header("Location: tp_guru_tampil.php");
+            exit;
+        }
+
+        mysqli_begin_transaction($koneksi);
+        try {
+            $berhasil = 0;
+            $q_insert = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran, kktp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt_insert = mysqli_prepare($koneksi, $q_insert);
+
+            while ($row = mysqli_fetch_assoc($q_tp_lama)) {
+                $q_cek = mysqli_query($koneksi, "SELECT id_tp FROM tujuan_pembelajaran WHERE id_guru_pembuat = $id_guru AND id_tahun_ajaran = $id_ta_aktif AND id_mapel = {$row['id_mapel']} AND kode_tp = '{$row['kode_tp']}' AND semester = '{$row['semester']}' LIMIT 1");
+                if (mysqli_num_rows($q_cek) == 0) {
+                    mysqli_stmt_bind_param($stmt_insert, "iisssiii", $row['id_mapel'], $id_guru, $row['fase'], $row['kode_tp'], $row['deskripsi_tp'], $row['semester'], $id_ta_aktif, $row['kktp']);
+                    if (mysqli_stmt_execute($stmt_insert)) { $berhasil++; }
+                }
+            }
+            mysqli_commit($koneksi);
+            if ($berhasil > 0) {
+                $_SESSION['pesan'] = "Berhasil menyalin $berhasil Tujuan Pembelajaran ke Tahun Ajaran aktif!";
+            } else {
+                $_SESSION['pesan'] = json_encode(['icon' => 'info', 'title' => 'Dilewati', 'text' => 'Semua TP yang Anda pilih sudah ada di Tahun Ajaran aktif.']);
+            }
+        } catch (Exception $e) {
+            mysqli_rollback($koneksi);
+            $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Error', 'text' => 'Gagal menyalin: ' . $e->getMessage()]);
+        }
+        header("Location: tp_guru_tampil.php");
+        break;
+
+    //======================================================================
     // AKSI UNTUK MENAMBAH TP BARU
     //======================================================================
     case 'tambah':
@@ -21,6 +87,7 @@ switch ($aksi) {
         $kode_tp = $_POST['kode_tp'];
         $deskripsi = $_POST['deskripsi_tp'];
         $semester = (int)$_POST['semester'];
+        $kktp = isset($_POST['kktp']) ? (int)$_POST['kktp'] : 75;
         $id_tahun_ajaran = (int)$_POST['id_tahun_ajaran'];
         $fase = 'D'; // Asumsi Fase D
 
@@ -30,9 +97,9 @@ switch ($aksi) {
             exit();
         }
 
-        $query_tp = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $query_tp = "INSERT INTO tujuan_pembelajaran (id_mapel, id_guru_pembuat, fase, kode_tp, deskripsi_tp, semester, id_tahun_ajaran, kktp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt_tp = mysqli_prepare($koneksi, $query_tp);
-        mysqli_stmt_bind_param($stmt_tp, "iisssii", $id_mapel, $id_guru, $fase, $kode_tp, $deskripsi, $semester, $id_tahun_ajaran);
+        mysqli_stmt_bind_param($stmt_tp, "iisssiii", $id_mapel, $id_guru, $fase, $kode_tp, $deskripsi, $semester, $id_tahun_ajaran, $kktp);
         
         if (mysqli_stmt_execute($stmt_tp)) {
             $_SESSION['pesan'] = "'Berhasil', 'Tujuan Pembelajaran baru berhasil ditambahkan.', 'success'";
@@ -180,6 +247,7 @@ switch ($aksi) {
         $kode_tp = $_POST['kode_tp'];
         $deskripsi = $_POST['deskripsi_tp'];
         $semester = (int)$_POST['semester'];
+        $kktp = isset($_POST['kktp']) ? (int)$_POST['kktp'] : 75;
 
         // Validasi dasar
         if (empty($id_tp) || empty($id_mapel) || empty($deskripsi) || empty($semester)) {
@@ -191,11 +259,11 @@ switch ($aksi) {
 
         // Query update dengan validasi kepemilikan (id_guru_pembuat)
         $query_update = "UPDATE tujuan_pembelajaran 
-                         SET id_mapel = ?, kode_tp = ?, deskripsi_tp = ?, semester = ? 
+                         SET id_mapel = ?, kode_tp = ?, deskripsi_tp = ?, semester = ?, kktp = ?
                          WHERE id_tp = ? AND id_guru_pembuat = ?";
         $stmt_update = mysqli_prepare($koneksi, $query_update);
-        // Tipe data: i (id_mapel), s (kode_tp), s (deskripsi_tp), i (semester), i (id_tp), i (id_guru)
-        mysqli_stmt_bind_param($stmt_update, "issiii", $id_mapel, $kode_tp, $deskripsi, $semester, $id_tp, $id_guru);
+        // Tipe data: i (id_mapel), s (kode_tp), s (deskripsi_tp), i (semester), i (kktp), i (id_tp), i (id_guru)
+        mysqli_stmt_bind_param($stmt_update, "issiiii", $id_mapel, $kode_tp, $deskripsi, $semester, $kktp, $id_tp, $id_guru);
         
         if (mysqli_stmt_execute($stmt_update)) {
             // Cek apakah ada baris yang benar-benar berubah

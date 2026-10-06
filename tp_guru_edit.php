@@ -101,6 +101,15 @@ $id_tahun_ajaran_aktif = $d_ta_aktif['id_tahun_ajaran'] ?? 0;
                     <div class="invalid-feedback">Deskripsi TP tidak boleh kosong.</div>
                 </div>
                 
+                <div class="mb-3">
+                    <label for="kktp" class="form-label fw-bold">Nilai KKTP (Kriteria Ketercapaian) <span class="text-danger">*</span></label>
+                    <div class="input-group" style="max-width: 250px;">
+                        <input type="number" class="form-control" id="kktp" name="kktp" min="0" max="100" value="<?php echo htmlspecialchars($data_tp['kktp'] ?? '75'); ?>" required>
+                        <span class="input-group-text bg-light">0-100</span>
+                    </div>
+                    <div class="form-text">Nilai batas tuntas khusus untuk Tujuan Pembelajaran ini.</div>
+                </div>
+
                 <div class="row">
                     <div class="col-md-4 mb-3">
                         <label for="semester" class="form-label fw-bold">Semester</label>

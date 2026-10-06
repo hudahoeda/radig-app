@@ -25,8 +25,8 @@ $nama_kelas = $kelas['nama_kelas'] ?? 'Anda tidak terdaftar sebagai wali kelas';
 $daftar_siswa = [];
 if ($id_kelas) {
     // Ambil data siswa termasuk foto
-    $q_siswa = mysqli_prepare($koneksi, "SELECT id_siswa, nis, nisn, nama_lengkap, foto_siswa FROM siswa WHERE id_kelas = ? ORDER BY nama_lengkap ASC");
-    mysqli_stmt_bind_param($q_siswa, "i", $id_kelas);
+    $q_siswa = mysqli_prepare($koneksi, "SELECT DISTINCT s.id_siswa, s.nis, s.nisn, s.nama_lengkap, s.foto_siswa FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = ? OR r.id_kelas = ?) ORDER BY s.nama_lengkap ASC");
+    mysqli_stmt_bind_param($q_siswa, "ii", $id_kelas, $id_kelas);
     mysqli_stmt_execute($q_siswa);
     $result_siswa = mysqli_stmt_get_result($q_siswa);
     while ($row = mysqli_fetch_assoc($result_siswa)) {

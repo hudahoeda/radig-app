@@ -29,7 +29,7 @@ if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['guru', 'admin'])
     die("Akses ditolak. Silakan login.");
 }
 
-$aksi = isset($_GET['aksi']) ? $_GET['aksi'] : '';
+$aksi = $_GET['aksi'] ?? $_POST['aksi'] ?? $_POST['action'] ?? '';
 $id_wali_kelas = $_SESSION['id_guru'] ?? 0; // Pastikan id_guru ada
 
 // Ambil KKM (dibutuhkan untuk fungsi hitungDataRaporSiswa)
@@ -173,16 +173,24 @@ function hitungDataRaporSiswa($koneksi, $id_siswa, $id_kelas, $semester_aktif, $
             arsort($tp_lulus); // Tertinggi ke Terendah (Lulus)
             asort($tp_remedi); // Terendah ke Tertinggi (Remedi/Perlu Bimbingan)
 
-            // Ambil maksimal 2 TP terbaik dan terburuk
-            $top_tp = array_slice(array_keys($tp_lulus), 0, 2);
-            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 2);
+            // Ambil maksimal 1 TP terbaik dan terburuk (berdasarkan permintaan)
+            $top_tp = array_slice(array_keys($tp_lulus), 0, 1);
+            $bottom_tp = array_slice(array_keys($tp_remedi), 0, 1);
 
             // 3. Susun Deskripsi Final
             $deskripsi_draf = "";
 
             // Kalimat Kekuatan (Top 2 LULUS)
             if (!empty($top_tp)) {
-                $deskripsi_draf .= "Menunjukkan penguasaan yang sangat baik dalam " . implode(', ', $top_tp) . ". ";
+                $top_score = reset($tp_lulus);
+                if ($top_score >= 90) {
+                    $predikat_teks = "sangat baik";
+                } elseif ($top_score >= 80) {
+                    $predikat_teks = "baik";
+                } else {
+                    $predikat_teks = "cukup baik";
+                }
+                $deskripsi_draf .= "Menunjukkan penguasaan yang $predikat_teks dalam " . implode(', ', $top_tp) . ". ";
             } elseif ($nilai_akhir >= $kkm && empty($top_tp)) {
                 $deskripsi_draf .= "Secara keseluruhan, capaian kompetensi sudah tuntas. ";
             }
@@ -297,9 +305,9 @@ if ($aksi == 'update_siswa') {
     $foto_lama = $_POST['foto_siswa_lama'] ?? null;
 
     // Keamanan: Pastikan wali kelas berhak mengedit siswa ini
-    $stmt_check = mysqli_prepare($koneksi, "SELECT s.id_siswa, s.foto_siswa FROM siswa s JOIN kelas k ON s.id_kelas = k.id_kelas WHERE s.id_siswa = ? AND (k.id_wali_kelas = ? OR ? = 'admin')");
-    $role_admin_check = $_SESSION['role']; 
-    mysqli_stmt_bind_param($stmt_check, "iis", $id_siswa, $id_wali_kelas, $role_admin_check);
+    $stmt_check = mysqli_prepare($koneksi, "SELECT s.id_siswa, s.foto_siswa FROM siswa s JOIN kelas k ON s.id_kelas = k.id_kelas WHERE s.id_siswa = ? AND (k.id_wali_kelas = ? OR ? = 1)");
+    $is_admin = ($_SESSION['role'] == 'admin') ? 1 : 0;
+    mysqli_stmt_bind_param($stmt_check, "iii", $id_siswa, $id_wali_kelas, $is_admin);
     
     mysqli_stmt_execute($stmt_check); 
     $result_check = mysqli_stmt_get_result($stmt_check);
@@ -325,8 +333,21 @@ if ($aksi == 'update_siswa') {
         }
         $file_tmp = $_FILES['foto_siswa']['tmp_name'];
         $file_ext = strtolower(pathinfo(basename($_FILES['foto_siswa']['name']), PATHINFO_EXTENSION));
+
+        // [SECURITY HARDENING] Validasi MIME Type Asli dengan finfo atau mime_content_type
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime_type = finfo_file($finfo, $file_tmp);
+            finfo_close($finfo);
+        } elseif (function_exists('mime_content_type')) {
+            $mime_type = mime_content_type($file_tmp);
+        } else {
+            $mime_type = 'image/' . ($file_ext == 'jpg' ? 'jpeg' : $file_ext);
+        }
+        $allowed_mimes = ['image/jpeg', 'image/png', 'image/jpg'];
+
         $allowed_ext = ['jpg', 'jpeg', 'png'];
-        if (in_array($file_ext, $allowed_ext) && $_FILES['foto_siswa']['size'] <= 1048576) {
+        if (in_array($file_ext, $allowed_ext) && in_array($mime_type, $allowed_mimes) && $_FILES['foto_siswa']['size'] <= 1048576) {
             $nama_file_foto_final = $id_siswa . '_' . time() . '.' . $file_ext;
             if (move_uploaded_file($file_tmp, $upload_dir . $nama_file_foto_final)) {
                 if ($foto_lama && $foto_lama != $nama_file_foto_final && file_exists($upload_dir . $foto_lama)) {
@@ -475,7 +496,10 @@ elseif ($aksi == 'simpan_data') {
             $sakit = (int)($data_absen['sakit'] ?? 0);
             $izin = (int)($data_absen['izin'] ?? 0);
             $alpha = (int)($data_absen['tanpa_keterangan'] ?? 0);
-            $catatan = $catatan_data[$id_siswa] ?? '';
+
+            // [SECURITY HARDENING] Mencegah XSS pada teks catatan
+            $raw_catatan = $catatan_data[$id_siswa] ?? '';
+            $catatan = htmlspecialchars(trim($raw_catatan), ENT_QUOTES, 'UTF-8');
             
             // Ambil keputusan dari array POST
             $keputusan = $keputusan_data[$id_siswa] ?? '-';
@@ -536,33 +560,59 @@ elseif ($aksi == 'simpan_pendaftaran_ekskul') {
         $pendaftaran_ekskul = $_POST['ekskul'] ?? [];
         
         // 1. Ambil semua siswa di kelas ini
-        $query_siswa_kelas = mysqli_query($koneksi, "SELECT id_siswa FROM siswa WHERE id_kelas = $id_kelas");
+        $query_siswa_kelas = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas");
         $list_id_siswa = [];
         while ($siswa = mysqli_fetch_assoc($query_siswa_kelas)) {
             $list_id_siswa[] = $siswa['id_siswa'];
         }
         
-        // 2. Hapus semua pendaftaran ekskul LAMA untuk semua siswa di kelas ini (Reset total)
+        // 2. Ambil data pendaftaran LAMA
+        $old_data = [];
         if (!empty($list_id_siswa)) {
             $string_id_siswa = implode(',', $list_id_siswa);
-            $query_delete = "DELETE FROM ekskul_peserta WHERE id_siswa IN ($string_id_siswa)";
-            mysqli_query($koneksi, $query_delete);
-        }
-        
-        // 3. Masukkan pendaftaran BARU
-        if (!empty($pendaftaran_ekskul)) {
-            $stmt_insert = mysqli_prepare($koneksi, "INSERT INTO ekskul_peserta (id_siswa, id_ekskul) VALUES (?, ?)");
-            foreach ($pendaftaran_ekskul as $id_siswa => $list_ekskul) {
-                foreach ((array)$list_ekskul as $id_ekskul) {
-                    mysqli_stmt_bind_param($stmt_insert, 'ii', $id_siswa, $id_ekskul);
-                    mysqli_stmt_execute($stmt_insert);
-                }
+            $query_old = mysqli_query($koneksi, "SELECT id_siswa, id_ekskul FROM ekskul_peserta WHERE id_siswa IN ($string_id_siswa)");
+            while ($row = mysqli_fetch_assoc($query_old)) {
+                $old_data[$row['id_siswa']][] = $row['id_ekskul'];
             }
-            mysqli_stmt_close($stmt_insert);
         }
         
+        // 3. Bandingkan dan Update pendaftaran
+        $stmt_insert = mysqli_prepare($koneksi, "INSERT INTO ekskul_peserta (id_siswa, id_ekskul) VALUES (?, ?)");
+        $stmt_delete = mysqli_prepare($koneksi, "DELETE FROM ekskul_peserta WHERE id_siswa = ? AND id_ekskul = ?");
+
+        foreach ($list_id_siswa as $id_siswa) {
+            $new_ekskuls = $pendaftaran_ekskul[$id_siswa] ?? [];
+            $old_ekskuls = $old_data[$id_siswa] ?? [];
+
+            // Yang harus ditambahkan (ada di new, tidak ada di old)
+            $to_add = array_diff($new_ekskuls, $old_ekskuls);
+            foreach ($to_add as $id_ekskul) {
+                mysqli_stmt_bind_param($stmt_insert, 'ii', $id_siswa, $id_ekskul);
+                mysqli_stmt_execute($stmt_insert);
+            }
+
+            // Yang harus dihapus (ada di old, tidak ada di new)
+            $to_delete = array_diff($old_ekskuls, $new_ekskuls);
+            foreach ($to_delete as $id_ekskul) {
+                // [BUG FIX] Ambil id_peserta_ekskul dulu untuk menghapus data anak (nilai & kehadiran)
+                $q_peserta_del = mysqli_query($koneksi, "SELECT id_peserta_ekskul FROM ekskul_peserta WHERE id_siswa = $id_siswa AND id_ekskul = $id_ekskul");
+                if ($q_peserta_del && mysqli_num_rows($q_peserta_del) > 0) {
+                    $id_peserta_del = mysqli_fetch_assoc($q_peserta_del)['id_peserta_ekskul'];
+                    // Hapus nilai dan kehadiran
+                    mysqli_query($koneksi, "DELETE FROM ekskul_penilaian WHERE id_peserta_ekskul = $id_peserta_del");
+                    mysqli_query($koneksi, "DELETE FROM ekskul_kehadiran WHERE id_peserta_ekskul = $id_peserta_del");
+                }
+
+                mysqli_stmt_bind_param($stmt_delete, 'ii', $id_siswa, $id_ekskul);
+                mysqli_stmt_execute($stmt_delete);
+            }
+        }
+        
+        if ($stmt_insert) mysqli_stmt_close($stmt_insert);
+        if ($stmt_delete) mysqli_stmt_close($stmt_delete);
+
         mysqli_commit($koneksi);
-        $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => 'Data pendaftaran ekstrakurikuler berhasil diperbarui (Reset Total).']);
+        $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Berhasil', 'text' => 'Data pendaftaran ekstrakurikuler berhasil diperbarui.']);
     } catch (Exception $exception) {
         mysqli_rollback($koneksi);
         $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Terjadi kesalahan: ' . $exception->getMessage()]);
@@ -584,10 +634,10 @@ elseif ($aksi == 'hapus_peserta_ekskul') {
         SELECT s.id_siswa 
         FROM siswa s 
         JOIN kelas k ON s.id_kelas = k.id_kelas 
-        WHERE s.id_siswa = ? AND (k.id_wali_kelas = ? OR ? = 'admin')
+        WHERE s.id_siswa = ? AND (k.id_wali_kelas = ? OR ? = 1)
     ");
-    $role_admin_check = $_SESSION['role']; 
-    mysqli_stmt_bind_param($stmt_cek, "iis", $id_siswa, $id_wali_kelas, $role_admin_check);
+    $is_admin = ($_SESSION['role'] == 'admin') ? 1 : 0;
+    mysqli_stmt_bind_param($stmt_cek, "iii", $id_siswa, $id_wali_kelas, $is_admin);
     mysqli_stmt_execute($stmt_cek);
     
     if (mysqli_stmt_get_result($stmt_cek)->num_rows > 0) {
@@ -603,6 +653,18 @@ elseif ($aksi == 'hapus_peserta_ekskul') {
             mysqli_stmt_close($q_peserta);
 
             if ($id_peserta_ekskul > 0) {
+                 // [BUG FIX] Hapus nilai dan kehadiran terlebih dahulu
+                 $stmt_del_n = mysqli_prepare($koneksi, "DELETE FROM ekskul_penilaian WHERE id_peserta_ekskul = ?");
+                 mysqli_stmt_bind_param($stmt_del_n, "i", $id_peserta_ekskul);
+                 mysqli_stmt_execute($stmt_del_n);
+                 mysqli_stmt_close($stmt_del_n);
+
+                 $stmt_del_k = mysqli_prepare($koneksi, "DELETE FROM ekskul_kehadiran WHERE id_peserta_ekskul = ?");
+                 mysqli_stmt_bind_param($stmt_del_k, "i", $id_peserta_ekskul);
+                 mysqli_stmt_execute($stmt_del_k);
+                 mysqli_stmt_close($stmt_del_k);
+
+                 // Baru hapus peserta
                  $stmt_delete = mysqli_prepare($koneksi, "DELETE FROM ekskul_peserta WHERE id_peserta_ekskul = ?");
                  mysqli_stmt_bind_param($stmt_delete, "i", $id_peserta_ekskul);
                  mysqli_stmt_execute($stmt_delete);
@@ -628,7 +690,7 @@ elseif ($aksi == 'hapus_peserta_ekskul') {
 //======================================================================
 // --- AKSI FINALISASI RAPOR (Menggunakan logika Sederhana Anda yang Bekerja) ---
 //======================================================================
-elseif ($aksi == 'finalisasi_semua') {
+elseif ($aksi == 'simpan_rpr') {
     // Ambil info tahun ajaran dan semester aktif
     $q_ta = mysqli_query($koneksi, "SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
     $id_tahun_ajaran = mysqli_fetch_assoc($q_ta)['id_tahun_ajaran'] ?? 0;
@@ -658,8 +720,8 @@ elseif ($aksi == 'finalisasi_semua') {
     mysqli_begin_transaction($koneksi);
     try {
         // 1. Ambil SEMUA siswa aktif di kelas tersebut
-        $q_siswa_kelas = mysqli_prepare($koneksi, "SELECT id_siswa FROM siswa WHERE id_kelas = ? AND status_siswa = 'Aktif'");
-        mysqli_stmt_bind_param($q_siswa_kelas, "i", $id_kelas);
+        $q_siswa_kelas = mysqli_prepare($koneksi, "SELECT DISTINCT s.id_siswa FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = ? OR r.id_kelas = ?)");
+        mysqli_stmt_bind_param($q_siswa_kelas, "ii", $id_kelas, $id_kelas);
         mysqli_stmt_execute($q_siswa_kelas);
         $result_siswa = mysqli_stmt_get_result($q_siswa_kelas);
         $siswa_list = mysqli_fetch_all($result_siswa, MYSQLI_ASSOC);
@@ -687,10 +749,10 @@ elseif ($aksi == 'finalisasi_semua') {
         $stmt_rapor_ekskul_delete = mysqli_prepare($koneksi, "DELETE FROM rapor_detail_ekskul WHERE id_rapor = ?");
         $stmt_rapor_ekskul_insert = mysqli_prepare($koneksi, "INSERT INTO rapor_detail_ekskul (id_rapor, nama_ekskul, keterangan) VALUES (?, ?, ?)");
         
-        // UPSERT Rapor Induk (Sederhana: Hanya update Status & Tanggal)
-        $stmt_rapor_upsert = mysqli_prepare($koneksi, "INSERT INTO rapor (id_siswa, id_kelas, id_tahun_ajaran, semester, status, tanggal_rapor) 
-            VALUES (?, ?, ?, ?, 'Final', ?) 
-            ON DUPLICATE KEY UPDATE status = 'Final', tanggal_rapor = VALUES(tanggal_rapor)");
+        // UPSERT Rapor Induk (Menyimpan Status, Tanggal, serta Mengunci Data Historis Kelas & Wali Kelas)
+        $stmt_rapor_upsert = mysqli_prepare($koneksi, "INSERT INTO rapor (id_siswa, id_kelas, id_tahun_ajaran, semester, status, tanggal_rapor, id_kelas_historis, id_walikelas_historis)
+            VALUES (?, ?, ?, ?, 'Final', ?, ?, ?)
+            ON DUPLICATE KEY UPDATE status = 'Final', tanggal_rapor = VALUES(tanggal_rapor), id_kelas_historis = VALUES(id_kelas_historis), id_walikelas_historis = VALUES(id_walikelas_historis)");
         $stmt_get_rapor_id = mysqli_prepare($koneksi, "SELECT id_rapor FROM rapor WHERE id_siswa = ? AND id_tahun_ajaran = ? AND semester = ?");
 
         // 4. Looping untuk setiap siswa
@@ -699,7 +761,7 @@ elseif ($aksi == 'finalisasi_semua') {
             $id_siswa = $siswa['id_siswa'];
 
             // --- A. PROSES RAPOR UTAMA (FINALISASI) ---
-            mysqli_stmt_bind_param($stmt_rapor_upsert, "iiiis", $id_siswa, $id_kelas, $id_tahun_ajaran, $semester_aktif, $tanggal_rapor);
+            mysqli_stmt_bind_param($stmt_rapor_upsert, "iiiisii", $id_siswa, $id_kelas, $id_tahun_ajaran, $semester_aktif, $tanggal_rapor, $id_kelas, $id_wali_kelas);
             mysqli_stmt_execute($stmt_rapor_upsert);
             
             // Ambil ID Rapor
@@ -774,13 +836,14 @@ elseif ($aksi == 'finalisasi_semua') {
         mysqli_stmt_close($stmt_rapor_ekskul_insert);
         mysqli_stmt_close($stmt_rapor_upsert);
         mysqli_stmt_close($stmt_get_rapor_id);
-
         mysqli_commit($koneksi);
         $_SESSION['pesan'] = json_encode(['icon' => 'success', 'title' => 'Proses Selesai', 'text' => "Berhasil memproses dan memfinalisasi rapor untuk {$jumlah_siswa_di_kelas} siswa di kelas Anda."]);
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         mysqli_rollback($koneksi);
-        $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal Total', 'text' => 'Terjadi kesalahan saat finalisasi: ' . $e->getMessage()]);
+        $error_msg = 'Terjadi kesalahan saat finalisasi: ' . $e->getMessage();
+        file_put_contents('error_finalisasi.log', date('Y-m-d H:i:s') . " - " . $error_msg . "\n", FILE_APPEND);
+        $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal Total', 'text' => $error_msg]);
     }
 
     header('Location: walikelas_cetak_rapor.php');
@@ -788,9 +851,9 @@ elseif ($aksi == 'finalisasi_semua') {
 }
 
 //======================================================================
-// --- AKSI BATALKAN FINALISASI RAPOR (Menggunakan logika Sederhana Anda yang Bekerja) ---
+// --- AKSI BATALKAN FINALISASI ---
 //======================================================================
-elseif ($aksi == 'batalkan_finalisasi_semua') {
+elseif ($aksi == 'batal_rpr') {
     // Ambil info tahun ajaran dan semester aktif
     $q_ta = mysqli_query($koneksi, "SELECT id_tahun_ajaran FROM tahun_ajaran WHERE status = 'Aktif' LIMIT 1");
     $id_tahun_ajaran = mysqli_fetch_assoc($q_ta)['id_tahun_ajaran'] ?? 0;
@@ -807,7 +870,7 @@ elseif ($aksi == 'batalkan_finalisasi_semua') {
     mysqli_stmt_close($q_kelas);
 
     if ($id_kelas == 0) {
-        $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Anda tidak terdaftar sebagai wali kelas aktif.']);
+        $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Anda tidak terdaftar sebagai wali kelas aktif. (ID Kelas tidak ditemukan)']);
         header('Location: walikelas_cetak_rapor.php');
         exit();
     }
@@ -830,9 +893,9 @@ elseif ($aksi == 'batalkan_finalisasi_semua') {
     mysqli_stmt_close($stmt_ids);
 
     if (empty($rapor_ids_to_revert)) {
-        $_SESSION['pesan'] = json_encode(['icon' => 'info', 'title' => 'Tidak Ada Perubahan', 'text' => 'Tidak ada rapor yang perlu dibatalkan finalisasinya (semua sudah status Draft).']);
-        header("Location: walikelas_cetak_rapor.php");
-        exit;
+        $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Peringatan', 'text' => 'Tidak ada rapor dengan status Final di kelas Anda untuk dibatalkan.']);
+        header('Location: walikelas_cetak_rapor.php');
+        exit();
     }
 
     // Ubah array ID menjadi string untuk query IN
@@ -864,10 +927,7 @@ elseif ($aksi == 'batalkan_finalisasi_semua') {
         $q_update_status_draft = "
             UPDATE rapor 
             SET 
-                status = 'Draft', 
-                deskripsi_kokurikuler = NULL, 
-                deskripsi_ekstrakurikuler = NULL,
-                catatan_wali_kelas = NULL,
+                status = 'Draft',
                 tanggal_rapor = NULL
             WHERE id_rapor IN ($id_list)
         ";

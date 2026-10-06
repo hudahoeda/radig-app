@@ -14,7 +14,7 @@ if (!$d_cover) return;
 
 // 2. AMBIL DATA SEKOLAH & JENJANG
 // [UPDATE] Menambahkan 'nama_sekolah' ke dalam query
-$q_sek_cover = mysqli_query($koneksi, "SELECT jenjang, logo_sekolah, nama_sekolah FROM sekolah WHERE id_sekolah = 1");
+$q_sek_cover = mysqli_query($koneksi, "SELECT jenjang, logo_sekolah, nama_sekolah FROM sekolah LIMIT 1");
 $d_sek_cover = mysqli_fetch_assoc($q_sek_cover);
 
 $jenjang = strtoupper($d_sek_cover['jenjang'] ?? 'SD');
@@ -22,10 +22,13 @@ $teks_jenjang = ($jenjang == 'SMP') ? 'SEKOLAH MENENGAH PERTAMA' : 'SEKOLAH DASA
 $singkatan_jenjang = ($jenjang == 'SMP') ? 'SMP' : 'SD';
 
 // 3. PERSIAPAN GAMBAR (MENGGUNAKAN FUNGSI GLOBAL)
+$logo_kiri_body = $logo_kiri ?? 'logo_kabupaten.png';
 $logo_kab_html = '';
-if (file_exists('uploads/logo_kabupaten.png')) {
+$path_kiri = 'uploads/' . $logo_kiri_body;
+if (!file_exists($path_kiri)) $path_kiri = 'uploads/logo_kabupaten.png';
+if (file_exists($path_kiri)) {
     if (function_exists('get_img_base64_local')) {
-        $img_kab = get_img_base64_local('logo_kabupaten.png'); // Tanpa uploads/ karena fungsi sudah handle
+        $img_kab = get_img_base64_local(basename($path_kiri)); // Tanpa uploads/ karena fungsi sudah handle
         $logo_kab_html = '<img src="'.$img_kab.'" style="height: 120px; width: auto;">';
     }
 }

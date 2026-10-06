@@ -2,6 +2,9 @@
 include 'koneksi.php';
 include 'header.php';
 
+// PATCH SEMENTARA: Perbaiki tipe data ENUM agar mendukung Sumatif Tengah Semester
+mysqli_query($koneksi, "ALTER TABLE penilaian MODIFY COLUMN subjenis_penilaian enum('Sumatif TP','Sumatif Tengah Semester','Sumatif Akhir Semester','Sumatif Akhir Tahun') DEFAULT NULL");
+
 // ===========================================================
 // VALIDASI AKSES
 // ===========================================================
@@ -260,6 +263,7 @@ $res_kelas_lain = mysqli_stmt_get_result($stmt_kls);
                     <label for="subjenis_penilaian_0" class="form-label">Sub-Jenis Sumatif</label>
                     <select class="form-select subjenis-penilaian-select" id="subjenis_penilaian_0" name="penilaian[0][subjenis_penilaian]" required>
                         <option value="Sumatif TP" selected>Sumatif Lingkup Materi (Per TP)</option>
+                        <option value="Sumatif Tengah Semester">Sumatif Tengah Semester (PTS/STS) - Opsional</option>
                         <?php if ($semester_aktif == 1): ?>
                             <option value="Sumatif Akhir Semester">Sumatif Akhir Semester (Ganjil)</option>
                         <?php else: ?>

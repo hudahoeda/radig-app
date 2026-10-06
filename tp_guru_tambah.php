@@ -90,6 +90,15 @@ $id_tahun_ajaran_aktif = $d_ta_aktif['id_tahun_ajaran'] ?? 0;
                                 <input type="text" class="form-control" id="kode_tp" name="kode_tp" placeholder="Contoh: B.IND.7.1">
                             </div>
                             
+                            <div class="col-md-6 mt-3 mt-md-0">
+                                <label for="kktp" class="form-label fw-bold">Nilai KKTP (Kriteria Ketercapaian) <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="kktp" name="kktp" min="0" max="100" value="75" required>
+                                    <span class="input-group-text bg-light">0-100</span>
+                                </div>
+                                <div class="form-text">Nilai batas tuntas khusus untuk Tujuan Pembelajaran ini.</div>
+                            </div>
+
                             <div class="col-md-6">
                                 <label for="semester" class="form-label fw-bold">Semester</label>
                                 <select class="form-select" id="semester" name="semester" required>

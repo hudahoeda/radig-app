@@ -90,7 +90,7 @@ function prosesDataKokurikulerSiswaRataRata($koneksi, $id_siswa, $id_tahun_ajara
 if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($_POST['deskripsi'])) { 
         $_SESSION['pesan'] = json_encode(['icon' => 'warning', 'title' => 'Gagal', 'text' => 'Tidak ada data deskripsi untuk disimpan.']); 
-        header("Location: walikelas_proses_kokurikuler.php"); 
+        echo "<script>window.location.href='walikelas_proses_kokurikuler.php';</script>";
         exit; 
     }
     
@@ -139,7 +139,7 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['pesan'] = json_encode(['icon' => 'error', 'title' => 'Gagal', 'text' => 'Error: ' . $e->getMessage()]); 
     }
     
-    header("Location: walikelas_proses_kokurikuler.php"); 
+    echo "<script>window.location.href='walikelas_proses_kokurikuler.php';</script>";
     exit;
 }
 ?>
@@ -174,7 +174,7 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="list-group list-group-flush">
                 <?php
-                $q_siswa_list = mysqli_query($koneksi, "SELECT id_siswa, nama_lengkap FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif' ORDER BY nama_lengkap");
+                $q_siswa_list = mysqli_query($koneksi, "SELECT DISTINCT s.id_siswa, s.nama_lengkap FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas) AND s.status_siswa = 'Aktif' ORDER BY s.nama_lengkap");
                 if (mysqli_num_rows($q_siswa_list) > 0) {
                     while($siswa = mysqli_fetch_assoc($q_siswa_list)): ?>
                         <label class="list-group-item list-group-item-action fs-6">
@@ -187,7 +187,11 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 ?>
             </div>
-             <div class="card-footer text-end">
+             <div class="card-footer d-flex justify-content-between align-items-center">
+                <div class="form-check form-switch fs-6 text-danger">
+                    <input class="form-check-input" type="checkbox" id="generateUlang" name="generate_ulang" value="1">
+                    <label class="form-check-label fw-bold" for="generateUlang"><i class="bi bi-exclamation-triangle-fill me-1"></i>Generate Ulang (Abaikan editan sebelumnya)</label>
+                </div>
                 <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-pencil-square me-2"></i>Buat Draf Deskripsi</button>
             </div>
         </div>
@@ -219,12 +223,16 @@ if ($action === 'save_final' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $rangkuman_data = $hasil_proses['rangkuman'];
             $deskripsi_draf = $hasil_proses['deskripsi'];
             
+            // Cek apakah opsi generate ulang dicentang
+            $generate_ulang = isset($_POST['generate_ulang']) && $_POST['generate_ulang'] == '1';
+
             // [PERBAIKAN PHP 8] Ambil data rapor dengan aman tanpa warning offset null
             $q_rapor_exist = mysqli_query($koneksi, "SELECT deskripsi_kokurikuler FROM rapor WHERE id_siswa=$id_siswa AND id_tahun_ajaran=$id_tahun_ajaran_aktif AND semester=$semester_aktif");
             $row_rapor = mysqli_fetch_assoc($q_rapor_exist);
             $deskripsi_tersimpan = $row_rapor ? ($row_rapor['deskripsi_kokurikuler'] ?? '') : '';
             
-            $deskripsi_final = !empty($deskripsi_tersimpan) ? $deskripsi_tersimpan : $deskripsi_draf;
+            // Gunakan draf baru jika belum ada data, ATAU jika user meminta generate ulang
+            $deskripsi_final = (!empty($deskripsi_tersimpan) && !$generate_ulang) ? $deskripsi_tersimpan : $deskripsi_draf;
         ?>
             <div class="accordion-item">
                 <h2 class="accordion-header">

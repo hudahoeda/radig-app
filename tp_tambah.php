@@ -30,6 +30,12 @@ $id_mapel = isset($_GET['id_mapel']) ? (int)$_GET['id_mapel'] : 0;
                     <label for="deskripsi_tp" class="form-label">Deskripsi Tujuan Pembelajaran</label>
                     <textarea class="form-control" id="deskripsi_tp" name="deskripsi_tp" rows="4" required></textarea>
                 </div>
+
+                <div class="mb-3">
+                    <label for="kktp" class="form-label">Nilai KKTP (Kriteria Ketercapaian)</label>
+                    <input type="number" class="form-control" id="kktp" name="kktp" min="0" max="100" value="75" required>
+                    <div class="form-text">Batas ketuntasan khusus untuk TP ini.</div>
+                </div>
                 <button type="submit" class="btn btn-primary"><i class="bi bi-floppy-fill"></i> Simpan TP</button>
             </form>
         </div>

@@ -63,14 +63,19 @@ if (!$siswa) {
         document.addEventListener('DOMContentLoaded', function() {
             Swal.fire({
                 icon: 'error',
-                title: 'Data Tidak Ditemukan',
-                text: 'Data siswa tidak ditemukan atau bukan bagian dari kelas Anda.',
+                title: 'Tidak Ditemukan',
+                text: 'Data siswa tidak ditemukan atau Anda bukan wali kelasnya.',
                 confirmButtonColor: '#3085d6'
             }).then(() => window.location = 'walikelas_identitas_siswa.php');
         });
     </script>";
     exit;
 }
+
+// Ambil info jenjang sekolah
+$q_sekolah = mysqli_query($koneksi, "SELECT jenjang FROM sekolah LIMIT 1");
+$jenjang = mysqli_fetch_assoc($q_sekolah)['jenjang'] ?? 'SMP';
+
 ?>
 
 <style>
@@ -207,7 +212,16 @@ if (!$siswa) {
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Agama</label>
-                                        <input type="text" class="form-control" name="agama" value="<?php echo htmlspecialchars($siswa['agama'] ?? ''); ?>">
+                                        <select class="form-select" name="agama">
+                                            <option value="">- Pilih Agama -</option>
+                                            <option value="Islam" <?php echo (($siswa['agama'] ?? '') == 'Islam') ? 'selected' : ''; ?>>Islam</option>
+                                            <option value="Kristen" <?php echo (($siswa['agama'] ?? '') == 'Kristen') ? 'selected' : ''; ?>>Kristen</option>
+                                            <option value="Katolik" <?php echo (($siswa['agama'] ?? '') == 'Katolik') ? 'selected' : ''; ?>>Katolik</option>
+                                            <option value="Hindu" <?php echo (($siswa['agama'] ?? '') == 'Hindu') ? 'selected' : ''; ?>>Hindu</option>
+                                            <option value="Buddha" <?php echo (($siswa['agama'] ?? '') == 'Buddha') ? 'selected' : ''; ?>>Buddha</option>
+                                            <option value="Konghucu" <?php echo (($siswa['agama'] ?? '') == 'Konghucu') ? 'selected' : ''; ?>>Konghucu</option>
+                                            <option value="Kepercayaan" <?php echo (($siswa['agama'] ?? '') == 'Kepercayaan') ? 'selected' : ''; ?>>Kepercayaan</option>
+                                        </select>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Status Keluarga</label>
@@ -261,9 +275,20 @@ if (!$siswa) {
                                         <label class="form-label">Diterima di Kelas</label>
                                         <select class="form-select" name="diterima_di_kelas">
                                             <option value="">- Pilih Kelas -</option>
-                                            <option value="7" <?php echo (($siswa['diterima_di_kelas'] ?? '') == '7') ? 'selected' : ''; ?>>Kelas 7</option>
-                                            <option value="8" <?php echo (($siswa['diterima_di_kelas'] ?? '') == '8') ? 'selected' : ''; ?>>Kelas 8</option>
-                                            <option value="9" <?php echo (($siswa['diterima_di_kelas'] ?? '') == '9') ? 'selected' : ''; ?>>Kelas 9</option>
+                                            <?php
+                                            if (strtoupper($jenjang) == 'SD') {
+                                                for ($i = 1; $i <= 6; $i++) {
+                                                    $sel = (($siswa['diterima_di_kelas'] ?? '') == (string)$i) ? 'selected' : '';
+                                                    echo "<option value='$i' $sel>Kelas $i</option>";
+                                                }
+                                            } else {
+                                                // Asumsi SMP (Default)
+                                                for ($i = 7; $i <= 9; $i++) {
+                                                    $sel = (($siswa['diterima_di_kelas'] ?? '') == (string)$i) ? 'selected' : '';
+                                                    echo "<option value='$i' $sel>Kelas $i</option>";
+                                                }
+                                            }
+                                            ?>
                                            
                                         </select>
                                     </div>

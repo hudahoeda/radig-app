@@ -229,7 +229,7 @@ $persen_global = ($total_siswa_global > 0) ? round(($total_final_global / $total
                             $has_foto = !empty($foto_guru) && file_exists($path_foto);
 
                             // Hitung progres
-                            $q_siswa = mysqli_query($koneksi, "SELECT COUNT(id_siswa) as total FROM siswa WHERE id_kelas = $id_kelas AND status_siswa = 'Aktif'");
+                            $q_siswa = mysqli_query($koneksi, "SELECT COUNT(DISTINCT s.id_siswa) as total FROM siswa s LEFT JOIN rapor r ON s.id_siswa = r.id_siswa WHERE (s.id_kelas = $id_kelas OR r.id_kelas = $id_kelas)");
                             $jumlah_siswa = mysqli_fetch_assoc($q_siswa)['total'] ?? 0;
 
                             $q_rapor_final = mysqli_query($koneksi, "SELECT COUNT(id_rapor) as total FROM rapor WHERE id_kelas = $id_kelas AND status = 'Final' AND semester = $semester_aktif AND id_tahun_ajaran = $id_tahun_ajaran_aktif");
